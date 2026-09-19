@@ -73,26 +73,27 @@ const PersistentWaveCanvas = memo(function PersistentWaveCanvas({
 }: ChannelProps) {
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const offRef       = useRef<OffscreenCanvas | HTMLCanvasElement | null>(null);
+  const rafRef       = useRef<number>(0);
   const lastPaintMs  = useRef<number>(0);
   const lastSimTRef  = useRef<number>(-1);
   const lastXRef     = useRef<number>(0);
-  const autoscaleRef = useRef<{ min: number; max: number; updatedMs: number }>({ min: 0, max: cfg.minRange, updatedMs: 0 });
+  const autoscaleRef = useRef<{ min: number; max: number }>({ min: 0, max: cfg.minRange });
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas) { requestAnimationFrame(draw); return; }
+    if (!canvas) { rafRef.current = requestAnimationFrame(draw); return; }
     const ctx = canvas.getContext('2d');
-    if (!ctx)  { requestAnimationFrame(draw); return; }
+    if (!ctx)  { rafRef.current = requestAnimationFrame(draw); return; }
 
     const W = canvas.width;
     const H = canvas.height;
-    if (W < 4) { requestAnimationFrame(draw); return; }
+    if (W < 4) { rafRef.current = requestAnimationFrame(draw); return; }
 
     const now   = performance.now();
     const speed = useTimeStore.getState().speedMultiplier;
 
     if (now - lastPaintMs.current < minFrameMs(speed)) {
-      requestAnimationFrame(draw); return;
+      rafRef.current = requestAnimationFrame(draw); return;
     }
     lastPaintMs.current = now;
 
@@ -106,7 +107,7 @@ const PersistentWaveCanvas = memo(function PersistentWaveCanvas({
     }
 
     const ctxOff = get2d(offRef.current!);
-    if (!ctxOff) { requestAnimationFrame(draw); return; }
+    if (!ctxOff) { rafRef.current = requestAnimationFrame(draw); return; }
 
     // ── Gate: ventilator connected ─────────────────────────────────────────────
     if (!usePatientStore.getState().isVentilatorConnected) {
@@ -117,7 +118,7 @@ const PersistentWaveCanvas = memo(function PersistentWaveCanvas({
       ctx.textAlign = 'center';
       ctx.fillText('INICIANDO VENTILACIÓN…', W / 2, H / 2);
       lastSimTRef.current = -1;
-      requestAnimationFrame(draw); return;
+      rafRef.current = requestAnimationFrame(draw); return;
     }
 
     // ── Gate: paused ──────────────────────────────────────────────────────────
@@ -129,7 +130,7 @@ const PersistentWaveCanvas = memo(function PersistentWaveCanvas({
       ctx.font = 'bold 11px JetBrains Mono, monospace';
       ctx.textAlign = 'center';
       ctx.fillText('SIMULACIÓN PAUSADA', W / 2, H / 2);
-      requestAnimationFrame(draw); return;
+      rafRef.current = requestAnimationFrame(draw); return;
     }
 
     const engine = RespiratoryEngine.getInstance().getVentEngine();
@@ -142,7 +143,7 @@ const PersistentWaveCanvas = memo(function PersistentWaveCanvas({
       ctx.textAlign = 'center';
       ctx.fillText('INICIANDO…', W / 2, H / 2);
       lastSimTRef.current = -1;
-      requestAnimationFrame(draw); return;
+      rafRef.current = requestAnimationFrame(draw); return;
     }
 
     // ── First frame or reset ──────────────────────────────────────────────────
@@ -153,7 +154,7 @@ const PersistentWaveCanvas = memo(function PersistentWaveCanvas({
       ctxOff.fillStyle = BG_COLOR; ctxOff.fillRect(0, 0, W, H);
       lastSimTRef.current = simT;
       lastXRef.current    = xNow;
-      requestAnimationFrame(draw); return;
+      rafRef.current = requestAnimationFrame(draw); return;
     }
 
     const prevSimT = lastSimTRef.current;
@@ -163,6 +164,15 @@ const PersistentWaveCanvas = memo(function PersistentWaveCanvas({
     let dxRaw = xNow - prevX;
     if (dxRaw < 0) dxRaw += W;
     const dx = Math.min(dxRaw, W - 1);
+
+    // No pixel advance this frame (sub-pixel step): composite and reschedule
+    if (dxRaw === 0) {
+      ctx.drawImage(offRef.current!, 0, 0);
+      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(xNow, 0); ctx.lineTo(xNow, H); ctx.stroke();
+      rafRef.current = requestAnimationFrame(draw); return;
+    }
 
     // ── Erase future band on offscreen ────────────────────────────────────────
     ctxOff.fillStyle = BG_COLOR;
@@ -174,11 +184,11 @@ const PersistentWaveCanvas = memo(function PersistentWaveCanvas({
       ctxOff.fillRect(0, 0, xNow + ERASE_AHEAD, H);
     }
 
-    // ── Autoscale (every 250 ms wall) ─────────────────────────────────────────
-    if (now - autoscaleRef.current.updatedMs > 250) {
+    // ── Autoscale: recompute every frame (O(500) — negligible cost) ──────────
+    {
       const wf = engine.getWaveforms();
       const sc = autoscaleFromBuffer(wf, cfg.key, simT - WINDOW_SIM_S, simT, cfg.minRange);
-      autoscaleRef.current = { ...sc, updatedMs: now };
+      autoscaleRef.current = sc;
     }
     const { min: yMin, max: yMax } = autoscaleRef.current;
     const yRange = yMax - yMin || cfg.minRange;
@@ -255,7 +265,7 @@ const PersistentWaveCanvas = memo(function PersistentWaveCanvas({
 
     lastSimTRef.current = simT;
     lastXRef.current    = xNow;
-    requestAnimationFrame(draw);
+    rafRef.current = requestAnimationFrame(draw);
   }, [cfg]);
 
   useEffect(() => {
@@ -276,8 +286,8 @@ const PersistentWaveCanvas = memo(function PersistentWaveCanvas({
       }
     });
     ro.observe(canvas.parentElement ?? canvas);
-    const raf = requestAnimationFrame(draw);
-    return () => { ro.disconnect(); cancelAnimationFrame(raf); };
+    rafRef.current = requestAnimationFrame(draw);
+    return () => { ro.disconnect(); cancelAnimationFrame(rafRef.current); };
   }, [draw, height]);
 
   return (

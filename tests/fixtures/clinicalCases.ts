@@ -55,8 +55,8 @@ export function applyUrosepsisESBL(): void {
  *  regimen lento (t½=2h, AcidBaseEngine) en vez del rapido (t½=0.5h) que
  *  se dispara cuando un vasopresor normaliza DO2.
  *
- *  bloodVolume calibrado a 2200 mL (56% de perdida — shock hemorragico
- *  clase IV) tras barrido empirico (C1.7 commit 2):
+ *  bloodVolume calibrado a 2500 mL (50% de perdida — shock hemorragico
+ *  clase III-IV) tras barrido empirico (C1.7 commit 2, recalibrado C1.7-fix):
  *    - 3400/2800 mL, sin SDRA: sobrevive, pero la taquicardia
  *      compensatoria (HR→~170-190) sube el CO lo suficiente para que
  *      DO2 supere el critico en <200s sim — el lactato se aclara
@@ -94,7 +94,7 @@ export function applySustainedLacticAcidosis(): void {
     paO2: 48, paCO2: 34, pH: 7.30, hco3: 20,
     lactate: 6.0, temperature: 38.2, weight: 70,
   });
-  usePatientStore.getState().setBloodVolume(2200);
+  usePatientStore.getState().setBloodVolume(2500);
   usePathologyStore.getState().setCaseCategory('infecto');
   usePathologyStore.getState().activatePathology('sepsis', null, 0.7);
   // SIN infusiones vasoactivas — es la condicion clave del fixture.

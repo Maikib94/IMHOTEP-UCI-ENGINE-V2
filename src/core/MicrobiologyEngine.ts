@@ -831,15 +831,13 @@ export class MicrobiologyEngine {
       const def = ANTIBIOTIC_CATALOG[atb.antibioticId];
       if (!def || !def.nephrotoxic) continue;
 
-      // Vancomicina: nefrotóxico sólo cuando trough > 20 μg/mL (ASHP 2020)
-      // nephroStressorRate esta en Cr/h (ver comentario en useMicrobiologyStore.ts);
-      // dt viene en segundos — dividir por 3600 para no aplicar la tasa horaria
-      // 3600x mas rapido de lo calibrado (C1.7 commit 1, bug de unidades).
+      // Vancomicina: toxicidad basal continua + bonus si trough > 20 μg/mL (ASHP 2020)
+      // nephroStressorRate esta en Cr/h; dt en segundos — dividir por 3600.
       if (atb.antibioticId === 'vancomycin') {
+        deltaCr += (def.nephroStressorRate / 3600) * dt;
         if (atb.troughLevel > VANCO_TROUGH_TOXIC) {
-          // Daño proporcional al exceso de trough
           const excess = atb.troughLevel - VANCO_TROUGH_TOXIC;
-          deltaCr += (def.nephroStressorRate / 3600) * (1 + excess / 20) * dt;
+          deltaCr += (def.nephroStressorRate / 3600) * (excess / 20) * dt;
         }
         continue;
       }
