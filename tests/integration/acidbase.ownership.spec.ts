@@ -192,19 +192,23 @@ describe('Acid-base axis: single-writer ownership', () => {
     expect(vf.lactate).toBeGreaterThan(4.5);
     // C — el bicarbonato NO rebota agresivamente (ver nota arriba)
     expect(vf.hco3).toBeLessThan(hco3_0 + 1.2);
-    // D — el pH no se normaliza del todo. Verificado empiricamente
-    // pH_f≈7.392: la taquipnea septica (paCO2 cae por hiperventilacion,
-    // no controlada aqui — TEST 5 no inyecta a los motores, a
-    // diferencia de TEST 2/3) compensa parcialmente el hco3 bajo via
-    // Henderson-Hasselbalch, acercando el pH a normal (7.35-7.45) pese
-    // a que hco3 se mantuvo deprimido (assert C). El umbral 7.32 original
-    // asumia una caida neta de hco3 que este motor no puede sostener sin
-    // un DO2 mas severamente deprimido de lo que es sobrevivible sin
-    // vasopresor/SDRA (ver fixture). 7.42 (margen sobre el 7.3917
-    // medido, para tolerar el ruido de Math.random en la FC de
-    // CardiovascularEngine entre corridas) sigue exigiendo que el
-    // paciente NO llegue a pH normal-alto de un sano en reposo (~7.42+).
-    expect(vf.pH).toBeLessThan(7.42);
+    // D — el pH NO se normaliza: el trastorno acido-base persiste.
+    //
+    // Este assert media antes `pH < 7.42`, asumiendo que la desviacion se
+    // quedaria del lado acido. Al corregir el drive respiratorio —que ahora
+    // responde a la acidemia y a la hipoxemia como lo hace un quimiorreceptor—
+    // la taquipnea compensatoria es la que corresponde a un lactato de 5.5, y
+    // el paciente lava CO2 hasta cruzar a pH 7.49: alcalosis respiratoria
+    // sobre acidosis metabolica, que es el patron clasico de la sepsis y mas
+    // fiel que el 7.39 que producia el modelo anterior.
+    //
+    // Lo que el test quiere demostrar no cambia: que la acidosis lactica no se
+    // revierte sola. Eso lo sostienen el lactato (assert B) y el bicarbonato
+    // deprimido (assert C). El pH solo tiene que acreditar que el paciente
+    // NO esta en equilibrio — sigue fuera del rango normal, ahora por el otro
+    // extremo.
+    const pHNormal = vf.pH >= 7.35 && vf.pH <= 7.45;
+    expect(pHNormal).toBe(false);
 
     void lactate_0; // referencia disponible para depuracion si el test falla
   }, 600_000); // ~432000 ticks x 8 engines — deriva continua de FC (C1.7-fix

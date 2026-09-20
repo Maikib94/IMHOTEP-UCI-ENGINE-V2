@@ -213,6 +213,7 @@ export class VentilatorSM100Engine {
   private pPlatMeasured = 0;
   // Asincronia — ver VentilatorAsynchrony.ts
   private lastAutoPeep = 0;          // realimenta el umbral de disparo
+  private prevEffort = 0;            // esfuerzo del tick previo (deteccion de flanco)
   private asyncBreaths = 0;          // respiraciones sin asincronia
   private asyncEvents = 0;
   private asyncCounts: Record<AsynchronyType, number> =
@@ -316,7 +317,7 @@ export class VentilatorSM100Engine {
     this.wf.t.fill(0); this.wf.paw.fill(0); this.wf.pTrach.fill(0);
     this.wf.flow.fill(0); this.wf.vol.fill(0); this.wf.ppl.fill(0); this.wf.pTP.fill(0);
     this.triggerArmed = true; this.refractoryS = 0;
-    this.lastAutoPeep = 0; this.pendingDoubleTrigger = false;
+    this.lastAutoPeep = 0; this.pendingDoubleTrigger = false; this.prevEffort = 0;
     this.asyncBreaths = 0; this.asyncEvents = 0;
     this.asyncCounts = { ineffective: 0, double: 0, autotrigger: 0, flowStarvation: 0 };
     this.lastMetrics = {
@@ -452,29 +453,15 @@ export class VentilatorSM100Engine {
         )
       ); // L/s
 
-    // En VCV puro, fijamos flujo cuadrado y derivamos Paw en su lugar:
-    if (s.mode === 'VCV' && isInsp) {
-      const flowSetLPS = this.vcvFlowLPS(s, this.phaseT);
-      this.flow = flowSetLPS;
-      const dV_mL = flowSetLPS * h * 1000;
-      this.vol += dV_mL;
-      // Paw emerge de la ecuaciÃ³n de movimiento
-      this.paw = pMus + s.peep + (this.vol / Math.max(0.1, m.crs))
-               + m.raw * flowSetLPS;
-    } else {
-      // PCV / PRVC / PSV / VCV-exp â†’ controlamos Paw, resolvemos VÌ‡
-      const V_mL = this.vol;
-      const k1 = dVdt(V_mL, pawTarget);             // L/s a t_n
-      const V_mid = V_mL + (h / 2) * k1 * 1000;     // mL intermedio
-      const k2 = dVdt(V_mid, pawTarget);            // L/s a t_n+h/2
-      this.flow = k2;
-      this.vol += h * k2 * 1000;
-      this.paw = pawTarget;
-    }
-
-    // Durante la espiraciÃ³n (Paw â‰ˆ PEEP), actualizar flujo y vol
+    // Un solo integrador por fase. Antes la espiracion pasaba por DOS: el
+    // bloque RK2 de abajo corria igualmente (su condicion incluye isInsp, que
+    // en espiracion es falso) y descontaba volumen, y despues el bloque
+    // espiratorio volvia a descontar sobre el resultado. El volumen caia al
+    // doble de velocidad pero vtExpired solo registraba el segundo descuento,
+    // asi que VTe salia ~26 % por debajo de VTi y el panel lo mostraba como
+    // una fuga que no existia.
     if (!isInsp) {
-      // Flujo espiratorio pasivo: VÌ‡_exp = âˆ’V/(RawÂ·Crs) (ec. decaimiento exponencial)
+      // ── Espiracion pasiva: VÌ‡_exp = âˆ’V/(RawÂ·Crs), decaimiento exponencial ──
       const tau = (m.raw * m.crs) / 1000; // s
       const vExpCurrent = Math.max(0, this.vol);
       this.flow = -vExpCurrent / Math.max(0.05, tau) / 1000; // L/s (negativo)
@@ -482,7 +469,23 @@ export class VentilatorSM100Engine {
       this.vol = Math.max(0, this.vol + dV);
       this.paw = s.peep; // modelo ideal con vÃ¡lvula PEEP abierta
       this.vtExpired += -dV; // acumula lo exhalado (valor positivo)
+    } else if (s.mode === 'VCV') {
+      // ── VCV: flujo cuadrado impuesto, Paw emerge de la ecuacion ──────────
+      const flowSetLPS = this.vcvFlowLPS(s, this.phaseT);
+      this.flow = flowSetLPS;
+      this.vol += flowSetLPS * h * 1000;
+      this.paw = pMus + s.peep + (this.vol / Math.max(0.1, m.crs))
+               + m.raw * flowSetLPS;
+      this.vtInspired += Math.max(0, this.flow * h * 1000);
     } else {
+      // ── PCV / PRVC / PSV: controlamos Paw, resolvemos VÌ‡ con RK2 ─────────
+      const V_mL = this.vol;
+      const k1 = dVdt(V_mL, pawTarget);             // L/s a t_n
+      const V_mid = V_mL + (h / 2) * k1 * 1000;     // mL intermedio
+      const k2 = dVdt(V_mid, pawTarget);            // L/s a t_n+h/2
+      this.flow = k2;
+      this.vol += h * k2 * 1000;
+      this.paw = pawTarget;
       this.vtInspired += Math.max(0, this.flow * h * 1000);
     }
 
@@ -615,7 +618,13 @@ export class VentilatorSM100Engine {
 
   // â”€â”€â”€ TRIGGERING â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   private checkTrigger(s: SM100Settings, pMus: number): boolean {
-    if (s.mode === 'VCV' || s.mode === 'PCV') return false; // control time-cycled
+    // VCV y PCV son asistida-controlada, no controlada pura: cada esfuerzo que
+    // supera el umbral entrega una respiracion completa con los parametros
+    // programados. Antes retornaban false sin mas, de modo que el paciente no
+    // podia disparar y el doble disparo era imposible justo en los modos donde
+    // Thille (Intensive Care Med 2006) lo describe como MAS frecuente que en
+    // PSV. Quien impone la ventilacion controlada pura es la ausencia de
+    // esfuerzo —sedacion profunda o bloqueo neuromuscular—, que ya anula pMus.
     if (this.phase !== 'exp') return false;
     if (this.refractoryS > 0) return false;
 
@@ -628,27 +637,34 @@ export class VentilatorSM100Engine {
       return true;
     }
 
+    // El disparo se evalua sobre el ESFUERZO del paciente (pMus, negativo
+    // durante la inspiracion espontanea), no sobre la señal cruda del
+    // circuito. La version anterior comparaba `0 - this.flow` contra el
+    // umbral, y en espiracion this.flow es negativo por definicion: la resta
+    // daba siempre un valor positivo grande, asi que el flujo espiratorio
+    // pasivo se interpretaba como un esfuerzo y el ventilador autodisparaba a
+    // ~60 rpm incluso con el paciente relajado. Estaba enmascarado porque VCV
+    // y PCV retornaban antes de llegar aqui.
+    //
     // La PEEP intrinseca se suma al umbral: antes de que el ventilador vea
     // nada, el esfuerzo tiene que neutralizar la presion que el volumen
     // atrapado mantiene en el alveolo. Es el mecanismo del esfuerzo inefectivo
     // en EPOC y asma, y la razon de que bajar el auto-PEEP lo haga desaparecer.
-    if (s.triggerType === 'flow') {
-      // VÌ‡_base âˆ’ VÌ‡_exp > threshold
-      const thr = Lmin_to_LPS(clamp(s.flowTriggerLpm, 0.5, 15))
-                + Lmin_to_LPS(this.lastAutoPeep * 2);
-      const baseFlow = 0; // lÃ­nea base espiratoria â‰ˆ 0
-      const diff = baseFlow - this.flow;
-      if (diff >= thr) {
-        this.refractoryS = 0.25;
-        return true;
-      }
-    } else {
-      // Pressure trigger: detecta drop de Paw bajo PEEP
-      const thr = clamp(s.pressTriggerCmH2O, 0.5, 20) + this.lastAutoPeep;
-      if ((s.peep - this.paw) >= thr) {
-        this.refractoryS = 0.25;
-        return true;
-      }
+    const effort = Math.max(0, -pMus);   // cmH2O
+    const prevEffort = this.prevEffort;
+    this.prevEffort = effort;
+    if (effort <= 0) return false;
+
+    const thr = this.triggerThresholdCmH2O(s) + this.lastAutoPeep;
+
+    // Disparo por FLANCO de subida, un ciclo por esfuerzo neural. Mirando solo
+    // el nivel, un unico esfuerzo disparaba varias veces: la sinusoide de
+    // computePMus permanece sobre el umbral bastante mas que la ventana
+    // refractaria de 0,25 s, asi que la frecuencia entregada trepaba a ~48 rpm
+    // y el tiempo espiratorio ya no bastaba para vaciar (VTe ~0, auto-PEEP 7).
+    if (prevEffort < thr && effort >= thr) {
+      this.refractoryS = 0.25;
+      return true;
     }
     return false;
   }
@@ -838,6 +854,18 @@ export function deriveMechanicsFromPathology(params: {
   hypovolemicFraction: number; // (BV_base âˆ’ BV_curr)/BV_base  (0â€“0.5)
   isSedated: boolean;
   nmbaFraction: number;        // 0â€“1 (parÃ¡lisis NMBA)
+  // ── Determinantes del drive respiratorio (ver bloque DRIVE abajo) ────────
+  sedationDepth?: number;      // 0â€“1+ profundidad de sedacion (graduada)
+  respDepression?: number;     // 0â€“1 depresion respiratoria por opioides
+  gcs?: number;                // 3â€“15
+  icp?: number;                // mmHg
+  pH?: number;
+  paCO2?: number;              // mmHg
+  paO2?: number;               // mmHg
+  copdActive?: boolean;
+  copdSeverity?: number;       // 0â€“1
+  asthmaActive?: boolean;
+  asthmaSeverity?: number;     // 0â€“1
 }): PatientMechanics {
   const w = params.weightKg ?? 70;
 
@@ -862,7 +890,101 @@ export function deriveMechanicsFromPathology(params: {
     pMusAmp *= (1 + 0.5 * params.sepsisSeverity);
   }
 
-  // NMBA (vecuronio/cisatracurio pleno) â†’ esfuerzo muscular anulado
+  // ── OBSTRUCCION: EPOC y asma ───────────────────────────────────────────
+  // Suben Raw, con lo que la constante de tiempo espiratoria se alarga y la
+  // espiracion no alcanza a vaciar antes del siguiente ciclo. El volumen
+  // atrapado genera auto-PEEP, y el auto-PEEP hace que el esfuerzo del
+  // paciente no llegue a disparar: el esfuerzo inefectivo no se sortea, sale
+  // solo de la mecanica. Es el mecanismo clasico del atrapamiento aereo.
+  if (params.copdActive) {
+    const sev = clamp(params.copdSeverity ?? 0.5, 0, 1);
+    raw += sev * 18;                          // hasta ~23 cmH2O/L/s
+    crs *= (1 + sev * 0.25);                  // hiperinsuflacion: Crs algo mayor
+  }
+  if (params.asthmaActive) {
+    const sev = clamp(params.asthmaSeverity ?? 0.5, 0, 1);
+    raw += sev * 28;                          // broncoespasmo severo domina Raw
+  }
+
+  // ═══ DRIVE RESPIRATORIO ═══════════════════════════════════════════════════
+  // El esfuerzo del paciente es el sustrato de toda asincronia: sin esfuerzo
+  // no hay conflicto con la maquina. Se modela en dos tiempos — primero los
+  // estimulos que lo AUMENTAN, despues los que lo DEPRIMEN — porque un
+  // paciente acidotico y sedado conserva parte del drive que la acidosis le
+  // impone, mientras que uno paralizado no tiene ninguno haga lo que haga su
+  // quimiorreceptor.
+
+  // ── Estimulos quimicos y neurologicos que aumentan el drive ─────────────
+  // Acidemia: el estimulo ventilatorio mas potente. pH 7.20 duplica el drive.
+  const pH = params.pH ?? 7.40;
+  if (pH < 7.35) {
+    const acidosis = clamp((7.35 - pH) / 0.20, 0, 1);
+    pMusAmp *= (1 + acidosis);
+    pMusHz  += acidosis * 0.20;               // hasta +12 rpm
+  }
+  // Hipoxemia: por debajo de 60 mmHg el cuerpo carotideo dispara.
+  const paO2 = params.paO2 ?? 95;
+  if (paO2 < 60) {
+    const hypoxemia = clamp((60 - paO2) / 30, 0, 1);
+    pMusAmp *= (1 + hypoxemia * 0.7);
+    pMusHz  += hypoxemia * 0.12;
+  }
+  // Hipertension intracraneal: hiperventilacion central neurogenica.
+  const icp = params.icp ?? 10;
+  if (icp > 20) {
+    const htic = clamp((icp - 20) / 20, 0, 1);
+    pMusAmp *= (1 + htic * 0.5);
+    pMusHz  += htic * 0.15;
+  }
+
+  // ── Retroalimentacion negativa del quimiorreceptor ──────────────────────
+  // Sin esto el lazo queda abierto: el paciente hiperventila, se alcaliniza y
+  // sigue hiperventilando, con el pH subiendo sin techo. La supresion del
+  // drive por alcalemia e hipocapnia es lo que cierra el control y devuelve
+  // la ventilacion a su punto de equilibrio.
+  if (pH > 7.45) {
+    const alkalemia = clamp((pH - 7.45) / 0.20, 0, 1);
+    pMusAmp *= (1 - alkalemia * 0.75);
+    pMusHz  *= (1 - alkalemia * 0.55);
+  }
+  // La PaCO2 es el estimulo dominante del centro respiratorio: por debajo de
+  // 35 mmHg el impulso cae deprisa, y cerca de 20 practicamente desaparece.
+  const paCO2 = params.paCO2 ?? 40;
+  if (paCO2 < 35) {
+    const hypocapnia = clamp((35 - paCO2) / 15, 0, 1);
+    pMusAmp *= (1 - hypocapnia * 0.80);
+    pMusHz  *= (1 - hypocapnia * 0.60);
+  } else if (paCO2 > 45) {
+    // Hipercapnia: estimula, hasta la narcosis por CO2 que ya no modelamos.
+    const hypercapnia = clamp((paCO2 - 45) / 35, 0, 1);
+    pMusAmp *= (1 + hypercapnia * 0.8);
+    pMusHz  += hypercapnia * 0.12;
+  }
+
+  // ── Factores que deprimen el drive ──────────────────────────────────────
+  // Coma estructural: el GCS bajo refleja un drive central deprimido, y ese
+  // drive bajo es el que Luo (Ann Intensive Care 2020) asocia a P0.1 baja y a
+  // esfuerzo inefectivo en neurocriticos.
+  const gcs = params.gcs ?? 15;
+  if (gcs < 9) {
+    pMusAmp *= clamp((gcs - 3) / 6, 0.15, 1);  // GCS 3 deja ~15 % del drive
+  }
+  // Sedacion graduada. La version binaria anterior anulaba el esfuerzo de
+  // golpe; en la practica la depresion es dosis-dependiente y es justo el
+  // rango intermedio —drive presente pero debil— el que mas asincronia
+  // produce (Luo 2020: el AI sube con opioides y sedantes combinados).
+  const sedation = params.sedationDepth ?? (params.isSedated ? 1 : 0);
+  pMusAmp *= clamp(1 - sedation * 0.85, 0.05, 1);
+  pMusHz  *= clamp(1 - sedation * 0.35, 0.4, 1);
+  // Opioides: deprimen sobre todo la frecuencia.
+  const respDep = clamp(params.respDepression ?? 0, 0, 1);
+  pMusAmp *= (1 - respDep * 0.5);
+  pMusHz  *= (1 - respDep * 0.55);
+
+  // NMBA (vecuronio/cisatracurio pleno) â†’ esfuerzo muscular anulado.
+  // La parlisis es el unico estado que lleva el drive a cero de verdad: un
+  // paciente relajado no puede desincronizarse.
+  pMusAmp *= clamp(1 - params.nmbaFraction / 0.6, 0, 1);
   if (params.nmbaFraction > 0.6) pMusAmp = 0;
 
   // Shock hemorrÃ¡gico: hipovolemia â†’ presiÃ³n intraabdominal â†“ pero sin cambio
@@ -877,8 +999,13 @@ export function deriveMechanicsFromPathology(params: {
     crs: clamp(crs, 8, 120),
     raw: clamp(raw, 2, 40),
     eCw_eTot: clamp(eCw, 0.3, 0.8),
-    pMusAmplitude: clamp(pMusAmp, 0, 15),
-    pMusDriveHz: clamp(pMusHz, 0.1, 0.7),    // 6â€“42 rpm
+    // Techos fisiologicos del esfuerzo espontaneo sostenido. Los estimulos se
+    // acumulan de forma multiplicativa (sepsis x acidemia x hipoxemia), asi
+    // que sin un tope el drive se dispara por encima de lo que un paciente
+    // puede mantener: por encima de ~35 rpm y ~12 cmH2O de esfuerzo continuo
+    // lo que sigue es agotamiento muscular, no mas ventilacion.
+    pMusAmplitude: clamp(pMusAmp, 0, 12),
+    pMusDriveHz: clamp(pMusHz, 0.1, 0.58),   // 6â€“35 rpm
     vAnat: 2.2 * w,
   };
 }

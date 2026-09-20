@@ -330,8 +330,13 @@ export class RespiratoryEngine {
     }
 
     // â”€â”€ 2. MecÃ¡nica del paciente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // ARM conectado: la mÃ¡quina toma el control â€” ignorar NMB/sedaciÃ³n para
-    // el esfuerzo del paciente (VCV entrega el volumen sin importar Pmus).
+    // La sedacion y el bloqueo neuromuscular se pasan SIEMPRE, tambien con el
+    // ARM conectado. Antes se anulaban ("la maquina toma el control"), lo cual
+    // vale para el VOLUMEN entregado —en VCV el flujo cuadrado lo garantiza
+    // sin importar Pmus— pero no para el ESFUERZO del paciente: con aquel
+    // bypass un paciente relajado con cisatracurio conservaba 3,5 cmH2O de
+    // esfuerzo, y sedar no cambiaba nada en el acoplamiento paciente-maquina.
+    // Ese esfuerzo es el sustrato de toda asincronia.
     const mechanics = deriveMechanicsFromPathology({
       weightKg: vitals.weight,
       ardsActive: path.ards.isActive,
@@ -339,8 +344,20 @@ export class RespiratoryEngine {
       sepsisActive: path.sepsis.isActive,
       sepsisSeverity: path.sepsis.severity,
       hypovolemicFraction: Math.max(0, (5000 - bloodVolume) / 5000),
-      isSedated: isArmConnected ? false : pharm.systemicEffects.sedation > 0.5,
-      nmbaFraction: isArmConnected ? 0 : pharm.systemicEffects.nmba,
+      isSedated: pharm.systemicEffects.sedation > 0.5,
+      nmbaFraction: pharm.systemicEffects.nmba,
+      // Determinantes del drive respiratorio
+      sedationDepth:  pharm.systemicEffects.sedation,
+      respDepression: pharm.systemicEffects.respDepressionIdx,
+      gcs:   vitals.gcs,
+      icp:   vitals.icp,
+      pH:    vitals.pH,
+      paCO2: vitals.paCO2,
+      paO2:  vitals.paO2,
+      copdActive:     path.copd.isActive,
+      copdSeverity:   path.copd.severity,
+      asthmaActive:   path.asthma.isActive,
+      asthmaSeverity: path.asthma.severity,
     });
 
     const effCrs = Math.min(
