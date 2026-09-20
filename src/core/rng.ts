@@ -27,10 +27,11 @@ export type RngStream =
   | 'labAssay'      // LabEngine — ruido gaussiano de resultados + leucopenia
   | 'microbiology'  // MicrobiologyEngine — seleccion de pathogeno, cultivos
   | 'prognosis'     // PrognosisEngine — probabilidad de muerte/recuperacion
+  | 'ventAsync'     // VentilatorAsynchrony — eventos no mecanisticos (auto-trigger)
   | 'misc';         // todo lo demas (InfectoEngine, IDs no criticos, etc.)
 
 const STREAMS: readonly RngStream[] = [
-  'cardioNoise', 'glucometer', 'labAssay', 'microbiology', 'prognosis', 'misc',
+  'cardioNoise', 'glucometer', 'labAssay', 'microbiology', 'prognosis', 'ventAsync', 'misc',
 ];
 
 /** mulberry32 — PRNG de 32 bits, rapido, sin dependencia externa.

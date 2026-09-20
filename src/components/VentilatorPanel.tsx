@@ -6,6 +6,9 @@ import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { usePatientStore, VentilatorMode } from '../store/usePatientStore';
 import { usePathologyStore } from '../store/usePathologyStore';
 import { RespiratoryEngine } from '../core/RespiratoryEngine';
+import {
+  ASYNC_LABELS_ES, ASYNC_HINTS_ES, AI_SEVERE_THRESHOLD, type AsynchronyType,
+} from '../core/VentilatorAsynchrony';
 import VentilatorCurves from './VentilatorCurves';
 import {
   useManeuverHistoryStore,
@@ -402,6 +405,7 @@ export default function VentilatorPanel({ isOpen, onClose }: VentilatorPanelProp
   const [recruitActive,   setRecruitActive]    = useState(false);
   const [recruitProgress, setRecruitProgress]  = useState(0);
   const [recruitEffect,   setRecruitEffect]    = useState<'none' | 'applied' | 'fibrotic'>('none');
+  const [showAsyncDetail, setShowAsyncDetail]  = useState(false);
 
   // Breath metrics straight from the ventilator engine. The store only mirrors
   // 6 of the 22 fields SM100BreathMetrics carries (RespiratoryEngine.ts:376),
@@ -536,6 +540,17 @@ export default function VentilatorPanel({ isOpen, onClose }: VentilatorPanelProp
   // resistance shows as "—" instead of being papered over with a floor value.
   const tau       = hasBreath && breath.rAwMeasured > 0 && breath.cStatMeasured > 0
     ? ((breath.rAwMeasured * breath.cStatMeasured) / 1000).toFixed(2) : '—';
+
+  // Asincronia paciente-ventilador. AI > 10% marca la asincronia severa
+  // asociada a peor desenlace (Blanch ICM 2015, Thille ICM 2006).
+  const ai        = hasBreath ? breath.asynchronyIndex : 0;
+  const aiAlarm   = ai >= AI_SEVERE_THRESHOLD;
+  const aiWarn    = ai >= 5 && !aiAlarm;
+  const asyncTop  = hasBreath
+    ? (Object.entries(breath.asyncCounts) as [AsynchronyType, number][])
+        .filter(([, n]) => n > 0)
+        .sort((a, b) => b[1] - a[1])
+    : [];
   const peepTotal = (vent.peep + autoPeep).toFixed(1);
   const ieLabel   = hasBreath && breath.ieRatio > 0
     ? `1:${(1 / breath.ieRatio).toFixed(1)}` : '—';
@@ -828,6 +843,72 @@ export default function VentilatorPanel({ isOpen, onClose }: VentilatorPanelProp
               <MonCard label="RAW"      value={rAw}      unit="cmH₂O/L/s" alarm={rAwAlarm} />
               <MonCard label="τ = R×C"  value={tau}      unit="s" />
             </div>
+
+            {/* ─ Asincronía paciente-ventilador ─
+                El desglose por tipo va detrás de un toggle a propósito: los
+                intensivistas detectan asincronías con sensibilidad ~22 %
+                respiración a respiración (Colombo, Crit Care Med 2011), así
+                que identificarlas en la curva es parte del ejercicio. El
+                índice sí se muestra siempre: es una medida del ventilador. */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginTop: 3,
+            }}>
+              <span style={{ fontSize: '0.36rem', fontWeight: 900, letterSpacing: '0.14em', color: C.dimText }}>
+                ASINCRONÍA
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowAsyncDetail(d => !d)}
+                title={showAsyncDetail
+                  ? 'Ocultar el desglose y volver a buscarlas en la curva'
+                  : 'Modo docente: revelar qué asincronías ha detectado el motor'}
+                style={{
+                  padding: '1px 6px', borderRadius: 4, cursor: 'pointer',
+                  background: showAsyncDetail ? 'rgba(245,197,24,0.14)' : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${showAsyncDetail ? 'rgba(245,197,24,0.4)' : C.border}`,
+                  color: showAsyncDetail ? '#f5c518' : C.dimText,
+                  fontSize: '0.33rem', fontWeight: 700, fontFamily: 'monospace',
+                }}
+              >
+                {showAsyncDetail ? 'DOCENTE ON' : 'DOCENTE'}
+              </button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+              <MonCard label="AI" value={hasBreath ? ai.toFixed(1) : '—'} unit="%"
+                alarm={aiAlarm} warn={aiWarn} />
+              <MonCard label="EVENTOS" value={asyncTop.reduce((n, [, c]) => n + c, 0)} unit="" />
+            </div>
+
+            {showAsyncDetail && (
+              asyncTop.length === 0 ? (
+                <div style={{ fontSize: '0.33rem', color: C.dimText, fontFamily: 'monospace', lineHeight: 1.5 }}>
+                  Sin asincronías detectadas todavía.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {asyncTop.map(([type, n]) => (
+                    <div key={type} style={{
+                      background: C.bgCard, border: `1px solid ${C.border}`,
+                      borderRadius: 4, padding: '3px 5px',
+                    }}>
+                      <div style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+                        fontFamily: 'monospace',
+                      }}>
+                        <span style={{ fontSize: '0.35rem', color: C.brightText, fontWeight: 700 }}>
+                          {ASYNC_LABELS_ES[type]}
+                        </span>
+                        <span style={{ fontSize: '0.5rem', color: '#f5c518', fontWeight: 900 }}>{n}</span>
+                      </div>
+                      <div style={{ fontSize: '0.3rem', color: C.dimText, lineHeight: 1.4, marginTop: 1 }}>
+                        {ASYNC_HINTS_ES[type]}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
 
             {deltaP > 0 && (
               <div style={{ marginTop: 2 }}>

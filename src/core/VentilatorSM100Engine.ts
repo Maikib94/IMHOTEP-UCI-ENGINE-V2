@@ -37,6 +37,10 @@
 //    Geri G. et al.            J Crit Care 2021;64:100-107.            [CRSÂ·renal]
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
+import {
+  evaluateAsynchrony, asynchronyIndex, type AsynchronyType,
+} from './VentilatorAsynchrony';
+
 // â”€â”€â”€ TIPOS PÃšBLICOS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type VentMode =
@@ -124,6 +128,10 @@ export interface SM100BreathMetrics {
   pplSwing: number;          // cmHâ‚‚O (Î” ipsoâ€“esp)
   pTPPeak: number;           // cmHâ‚‚O
   acpFlag: boolean;          // Acute Cor Pulmonale pendiente de confirmaciÃ³n
+  // Asincronia paciente-ventilador (ver VentilatorAsynchrony.ts)
+  asynchrony: AsynchronyType | null;  // tipo detectado en ESTE ciclo, si hubo
+  asynchronyIndex: number;            // AI acumulado, %
+  asyncCounts: Record<AsynchronyType, number>;  // conteo por tipo desde el reset
 }
 
 // â”€â”€â”€ CONSTANTES ROHRER (Flevari 2011 adult ETTs) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -203,6 +211,13 @@ export class VentilatorSM100Engine {
   private vtInspired = 0;
   private vtExpired = 0;
   private pPlatMeasured = 0;
+  // Asincronia — ver VentilatorAsynchrony.ts
+  private lastAutoPeep = 0;          // realimenta el umbral de disparo
+  private asyncBreaths = 0;          // respiraciones sin asincronia
+  private asyncEvents = 0;
+  private asyncCounts: Record<AsynchronyType, number> =
+    { ineffective: 0, double: 0, autotrigger: 0, flowStarvation: 0 };
+  private pendingDoubleTrigger = false;
   private cycleStart = 0;
 
   // Historia (Ãºltima respiraciÃ³n completa)
@@ -211,6 +226,8 @@ export class VentilatorSM100Engine {
     vtInsp: 0, vtExp: 0, minVol: 0, pPeak: 0, pPlat: 0, pMean: 0,
     autoPeep: 0, drivingPressure: 0, mechPowerJmin: 0,
     cStatMeasured: 0, rAwMeasured: 0,
+    asynchrony: null, asynchronyIndex: 0,
+    asyncCounts: { ineffective: 0, double: 0, autotrigger: 0, flowStarvation: 0 },
     pTrachPeak: 0, pTrachPlat: 0,
     pInspTarget: 0, prvcDelta: 0,
     pplMean: 0, pplSwing: 0, pTPPeak: 0, acpFlag: false,
@@ -299,11 +316,16 @@ export class VentilatorSM100Engine {
     this.wf.t.fill(0); this.wf.paw.fill(0); this.wf.pTrach.fill(0);
     this.wf.flow.fill(0); this.wf.vol.fill(0); this.wf.ppl.fill(0); this.wf.pTP.fill(0);
     this.triggerArmed = true; this.refractoryS = 0;
+    this.lastAutoPeep = 0; this.pendingDoubleTrigger = false;
+    this.asyncBreaths = 0; this.asyncEvents = 0;
+    this.asyncCounts = { ineffective: 0, double: 0, autotrigger: 0, flowStarvation: 0 };
     this.lastMetrics = {
       breathId: 0, tCycle: 0, tInsp: 0, tExp: 0, ieRatio: 0,
       vtInsp: 0, vtExp: 0, minVol: 0, pPeak: 0, pPlat: 0, pMean: 0,
       autoPeep: 0, drivingPressure: 0, mechPowerJmin: 0,
       cStatMeasured: 0, rAwMeasured: 0,
+    asynchrony: null, asynchronyIndex: 0,
+    asyncCounts: { ineffective: 0, double: 0, autotrigger: 0, flowStarvation: 0 },
       pTrachPeak: 0, pTrachPlat: 0,
       pInspTarget: 0, prvcDelta: 0,
       pplMean: 0, pplSwing: 0, pTPPeak: 0, acpFlag: false,
@@ -407,7 +429,7 @@ export class VentilatorSM100Engine {
     const triggered = this.checkTrigger(s, pMus);
     if (triggered && this.phase === 'exp') {
       // Cerramos ciclo anterior y reiniciamos
-      this.onBreathStart(s);
+      this.onBreathStart(s, m);
       this.phaseT = 0;
     }
 
@@ -485,10 +507,20 @@ export class VentilatorSM100Engine {
     this.pplMin = Math.min(this.pplMin, this.ppl);
     this.pplMax = Math.max(this.pplMax, this.ppl);
 
-    // DetecciÃ³n de Pplat (fin de pausa inspiratoria / transiciÃ³n a espiraciÃ³n)
-    if (isInsp && Math.abs(this.flow) < 0.02) {
-      // flujo ~0 durante inspiraciÃ³n sostenida â‰ˆ plateau
-      this.pPlatMeasured = this.paw;
+    // Pplat = presion elastica al final de la inspiracion, es decir Paw sin su
+    // componente resistivo (raw x flow). En un modelo de compartimento unico
+    // eso es exactamente lo que mediria una pausa inspiratoria, sin necesidad
+    // de forzarla.
+    //
+    // La version anterior esperaba a que el flujo cayera bajo 0.02 L/s durante
+    // la inspiracion. En VCV el flujo es cuadrado: se mantiene constante
+    // (~0.67 L/s a 40 L/min) y se corta de golpe cuando isInsp ya es false, asi
+    // que nunca entraba en esa ventana. pPlatMeasured quedaba en 0 y el
+    // fallback de onBreathStart lo sustituia por Ppico, con lo que
+    // Pplat == Ppico, Raw == 0, auto-PEEP == 0 (depende de Raw) y la driving
+    // pressure quedaba inflada para los cinco motores que la consumen.
+    if (isInsp) {
+      this.pPlatMeasured = pMus + s.peep + this.vol / Math.max(0.1, m.crs);
     }
 
     // â”€â”€ 7. Escritura en buffer de waveforms â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -520,7 +552,7 @@ export class VentilatorSM100Engine {
     //   adelantÃ³ la inspiraciÃ³n antes, ese cierre se disparÃ³ arriba.
     if (this.phaseT >= tCycle) {
       this.phaseT -= tCycle;
-      this.onBreathStart(s);
+      this.onBreathStart(s, m);
     }
   }
 
@@ -587,9 +619,23 @@ export class VentilatorSM100Engine {
     if (this.phase !== 'exp') return false;
     if (this.refractoryS > 0) return false;
 
+    // Doble disparo armado en el ciclo anterior: el esfuerzo neural seguia
+    // activo cuando la maquina ciclo a espiracion, asi que el paciente vuelve
+    // a disparar de inmediato y encadena dos insuflaciones.
+    if (this.pendingDoubleTrigger) {
+      this.pendingDoubleTrigger = false;
+      this.refractoryS = 0.25;
+      return true;
+    }
+
+    // La PEEP intrinseca se suma al umbral: antes de que el ventilador vea
+    // nada, el esfuerzo tiene que neutralizar la presion que el volumen
+    // atrapado mantiene en el alveolo. Es el mecanismo del esfuerzo inefectivo
+    // en EPOC y asma, y la razon de que bajar el auto-PEEP lo haga desaparecer.
     if (s.triggerType === 'flow') {
       // VÌ‡_base âˆ’ VÌ‡_exp > threshold
-      const thr = Lmin_to_LPS(clamp(s.flowTriggerLpm, 0.5, 15));
+      const thr = Lmin_to_LPS(clamp(s.flowTriggerLpm, 0.5, 15))
+                + Lmin_to_LPS(this.lastAutoPeep * 2);
       const baseFlow = 0; // lÃ­nea base espiratoria â‰ˆ 0
       const diff = baseFlow - this.flow;
       if (diff >= thr) {
@@ -598,7 +644,7 @@ export class VentilatorSM100Engine {
       }
     } else {
       // Pressure trigger: detecta drop de Paw bajo PEEP
-      const thr = clamp(s.pressTriggerCmH2O, 0.5, 20);
+      const thr = clamp(s.pressTriggerCmH2O, 0.5, 20) + this.lastAutoPeep;
       if ((s.peep - this.paw) >= thr) {
         this.refractoryS = 0.25;
         return true;
@@ -607,13 +653,23 @@ export class VentilatorSM100Engine {
     return false;
   }
 
+  /** Umbral de disparo expresado en cmH2O, para poder compararlo con pMus.
+   *  El trigger por flujo se convierte usando la conductancia del sistema:
+   *  un umbral de 2 L/min sobre una Raw tipica equivale a ~1 cmH2O. */
+  private triggerThresholdCmH2O(s: SM100Settings): number {
+    if (s.triggerType === 'flow') {
+      return clamp(s.flowTriggerLpm, 0.5, 15) * 0.5;
+    }
+    return clamp(s.pressTriggerCmH2O, 0.5, 20);
+  }
+
   // â”€â”€â”€ EVENTOS DE FIN DE CICLO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   private onInspEnd(): void {
     // AquÃ­ podrÃ­amos forzar una pausa inspiratoria para medir Pplat real,
     // pero el modelo single-compartment con flow=0 ya lo aproxima.
   }
 
-  private onBreathStart(s: SM100Settings): void {
+  private onBreathStart(s: SM100Settings, m: PatientMechanics): void {
     // Construir mÃ©tricas del ciclo que acaba de terminar
     const tCycle = Math.max(0.01, this.simTime - this.cycleStart);
     const tInsp = this.computeTInsp(s);
@@ -629,9 +685,16 @@ export class VentilatorSM100Engine {
     const vDotPeak = this.vtInspired / Math.max(0.1, tInsp) / 1000; // L/s
     const rAw = vDotPeak > 0.05 ? (this.peakPaw - pPlat) / vDotPeak : 0;
 
-    // auto-PEEP: estimaciÃ³n si tExp < 3Â·Ï„
-    const tau = (rAw * cStat) / 1000;
-    const autoPeep = tExp < 3 * tau ? 2 * Math.exp(-tExp / Math.max(0.01, tau)) : 0;
+    // auto-PEEP a partir del volumen realmente atrapado. this.vol en este
+    // punto es el residuo que la espiracion no alcanzo a vaciar antes de que
+    // empezara el ciclo siguiente, y la presion que ese volumen genera sobre
+    // la compliance es, por definicion, la PEEP intrinseca.
+    //
+    // Sustituye a la estimacion anterior 2*exp(-tExp/tau), cuyo factor 2 era
+    // arbitrario y que ademas dependia de rAw — cero mientras Pplat cayo al
+    // fallback de Ppico, con lo que el auto-PEEP era siempre 0.
+    const vTrapped = Math.max(0, this.vol);
+    const autoPeep = cStat > 0.5 ? vTrapped / cStat : 0;
 
     // Mechanical Power (Gattinoni 2016):
     // MP(J/min) = 0.098 Â· RR Â· V_T(L) Â· (PEEP + (Pplat âˆ’ PEEP)/2 + RrsÂ·VÌ‡)
@@ -645,6 +708,40 @@ export class VentilatorSM100Engine {
 
     // Flag Acute Cor Pulmonale (Vieillard-Baron 2016: Pplat > 27 + SDRA mod/sev)
     const acpFlag = pPlat > ACP_PPLAT_THR;
+
+    // ── Asincronia paciente-ventilador ──────────────────────────────────────
+    // Se evalua una vez por respiracion, con la mecanica del paciente y los
+    // ajustes vigentes. El auto-PEEP que entra aqui es el del ciclo que acaba
+    // de cerrarse, que es tambien el que el paciente tendra que vencer en el
+    // siguiente esfuerzo.
+    const pbw = Math.max(30, m.vAnat / 2.2);   // vAnat = 2.2 mL/kg  -> kg
+    const asyncEvent = evaluateAsynchrony({
+      pMusAmplitude:         m.pMusAmplitude,
+      triggerThresholdCmH2O: this.triggerThresholdCmH2O(s),
+      autoPeep,
+      vtPerKg:               this.vtInspired / pbw,
+      leakFraction:          this.vtInspired > 0
+        ? clamp(1 - this.vtExpired / this.vtInspired, 0, 1) : 0,
+      mode:                  s.mode,
+      deliveredFlowLpm:      LPS_to_Lmin(vDotPeak),
+      tInspSet:              tInsp,
+      // Duracion del esfuerzo neural. El drive sinusoidal de computePMus esta
+      // activo medio periodo, pero esa mitad no es el tiempo inspiratorio
+      // fisiologico: la relacion I:E neural en respiracion espontanea ronda
+      // 1:2, es decir un tercio del ciclo.
+      tInspNeural:           (1 / Math.max(0.1, m.pMusDriveHz)) / 3,
+    }, this.simTime);
+
+    if (asyncEvent) {
+      this.asyncEvents++;
+      this.asyncCounts[asyncEvent.type]++;
+      // Un doble disparo encadena una segunda insuflacion sin espiracion
+      // intermedia; se arma aqui y checkTrigger lo consume en el ciclo siguiente.
+      if (asyncEvent.type === 'double') this.pendingDoubleTrigger = true;
+    } else {
+      this.asyncBreaths++;
+    }
+    this.lastAutoPeep = autoPeep;
 
     const prevPrvcTarget = this.pInspTarget;
     let prvcDelta = 0;
@@ -667,6 +764,9 @@ export class VentilatorSM100Engine {
       pPeak: this.peakPaw, pPlat, pMean,
       autoPeep, drivingPressure: driveP, mechPowerJmin: mp,
       cStatMeasured: cStat, rAwMeasured: rAw,
+      asynchrony: asyncEvent ? asyncEvent.type : null,
+      asynchronyIndex: asynchronyIndex(this.asyncEvents, this.asyncBreaths),
+      asyncCounts: { ...this.asyncCounts },
       pTrachPeak, pTrachPlat,
       pInspTarget: prevPrvcTarget,
       prvcDelta,
@@ -681,6 +781,9 @@ export class VentilatorSM100Engine {
     this.pplMin = 0; this.pplMax = 0;
     this.vtInspired = 0; this.vtExpired = 0; this.pPlatMeasured = 0;
     this.vol = 0;
+    // El estado de asincronia NO se resetea por ciclo: los contadores y el AI
+    // son acumulativos, y pendingDoubleTrigger tiene que sobrevivir hasta que
+    // checkTrigger lo consuma en el ciclo siguiente.
   }
 
   // â”€â”€â”€ PRVC â€” CONTROLADOR DISCRETO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
