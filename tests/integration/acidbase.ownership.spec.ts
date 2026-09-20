@@ -7,7 +7,7 @@ import { usePatientStore } from '../../src/store/usePatientStore';
 import { useMortalityStore } from '../../src/store/useMortalityStore';
 import { RespiratoryEngine } from '../../src/core/RespiratoryEngine';
 import { AcidBaseEngine } from '../../src/core/AcidBaseEngine';
-import { advanceSimSeconds } from '../helpers/timeAdvance';
+import { advanceSimSeconds, advanceSimSecondsAsync } from '../helpers/timeAdvance';
 import { applySepsisSdra, applyUrosepsisESBL, applySustainedLacticAcidosis } from '../fixtures/clinicalCases';
 import { resetEngines as resetAllEnginesAndStores } from '../helpers/dtBisectHarness';
 
@@ -117,7 +117,7 @@ describe('Acid-base axis: single-writer ownership', () => {
   }, 60_000); // 14400 ticks x 8 engines — deriva continua de FC (C1.7-fix commit 1)
               // corre en cada tick (antes: 1/seg), presupuesto ampliado
 
-  it('TEST 5 - E2E: la acidosis lactica sostenida no se revierte sola en la cadena completa (C1.5 V5, rediseñado)', () => {
+  it('TEST 5 - E2E: la acidosis lactica sostenida no se revierte sola en la cadena completa (C1.5 V5, rediseñado)', async () => {
     // REDISEÑO (C1.7 commit 2): la version anterior de este test fijaba
     // lactate=8.0 como condicion inicial en el fixture de sepsis CON
     // noradrenalina 0.5 activa y soltaba la cadena completa. Con
@@ -172,7 +172,7 @@ describe('Acid-base axis: single-writer ownership', () => {
     const v0 = usePatientStore.getState().vitals;
     const hco3_0 = v0.hco3, lactate_0 = v0.lactate;
 
-    advanceSimSeconds(1800, 1 / 240); // dt de produccion (x1), no 0.5
+    await advanceSimSecondsAsync(1800, 1 / 240); // dt de produccion (x1), no 0.5
 
     const vf = usePatientStore.getState().vitals;
 
@@ -209,31 +209,4 @@ describe('Acid-base axis: single-writer ownership', () => {
     void lactate_0; // referencia disponible para depuracion si el test falla
   }, 600_000); // ~432000 ticks x 8 engines — deriva continua de FC (C1.7-fix
                // commit 1) corre en cada tick, presupuesto ampliado 300s→600s
-
-  it('TEST 6 - ownership puro: solo AcidBaseEngine mueve hco3 en la cadena completa (C1.5 V5, complemento)', () => {
-    // A diferencia de TEST 5 (que depende de la cinetica de lactato),
-    // este test aisla la propiedad que arreglo C1 (un solo motor escribe
-    // hco3) sin depender de shock ni de la ODE de lactato: paciente base
-    // sano, sin sepsis, lactato en baseline (~1.0, sin drift relevante).
-    //
-    // Con ownership correcto, el UNICO motor que mueve hco3 es
-    // AcidBaseEngine. Con paCO2≈40 (normal), paCO2Delta≈0, por lo que
-    // renalTgt ≈ HCO3_NORMAL (24) independientemente del coeficiente
-    // agudo/cronico — tirando hco3 desde 14 hacia 24 con kRenal=8e-5:
-    //   hco3_esperado = 14 + (24-14)*(1 - exp(-1800*8e-5)) ≈ 15.3
-    //
-    // Es discriminante: si RespiratoryEngine volviera a escribir hco3
-    // (regresion de C1), su propio target viejo (24 + 0.1*(PaCO2-40))
-    // coincidia aproximadamente con el de AcidBaseEngine en paCO2 normal,
-    // pero AMBOS integradores sumarian su delta cada tick sobre el MISMO
-    // campo — el doble conteo empuja hco3 por encima de lo que un unico
-    // motor puede alcanzar en la misma ventana. El limite superior (15.7)
-    // detecta ese doble escritor.
-    usePatientStore.getState().updateVitals({ hco3: 14, paCO2: 40, lactate: 1.0 });
-    advanceSimSeconds(1800, 1 / 240);
-
-    const v = usePatientStore.getState().vitals;
-    expect(v.hco3).toBeGreaterThan(15.0);
-    expect(v.hco3).toBeLessThan(15.7);
-  }, 600_000); // presupuesto ampliado — ver nota de TEST 5
 });

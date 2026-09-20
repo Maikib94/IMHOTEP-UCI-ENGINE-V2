@@ -5,6 +5,7 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { usePatientStore, VentilatorMode } from '../store/usePatientStore';
 import { usePathologyStore } from '../store/usePathologyStore';
+import { RespiratoryEngine } from '../core/RespiratoryEngine';
 import VentilatorCurves from './VentilatorCurves';
 import {
   useManeuverHistoryStore,
@@ -402,8 +403,22 @@ export default function VentilatorPanel({ isOpen, onClose }: VentilatorPanelProp
   const [recruitProgress, setRecruitProgress]  = useState(0);
   const [recruitEffect,   setRecruitEffect]    = useState<'none' | 'applied' | 'fibrotic'>('none');
 
+  // Breath metrics straight from the ventilator engine. The store only mirrors
+  // 6 of the 22 fields SM100BreathMetrics carries (RespiratoryEngine.ts:376),
+  // so volumes, auto-PEEP, compliance and resistance are only available here.
+  const [breath, setBreath] = useState(
+    () => RespiratoryEngine.getInstance().getVentEngine().getLastBreath()
+  );
+  useEffect(() => {
+    if (!isOpen) return;
+    const eng = RespiratoryEngine.getInstance();
+    const id = setInterval(() => setBreath(eng.getVentEngine().getLastBreath()), 250);
+    return () => clearInterval(id);
+  }, [isOpen]);
+
   const v                     = usePatientStore(s => s.vitals);
   const vent                  = usePatientStore(s => s.ventilator);
+  const profile               = usePatientStore(s => s.profile);
   const setVentilatorSettings = usePatientStore(s => s.setVentilatorSettings);
   const setVentMode           = usePatientStore(s => s.setVentMode);
   const toggleVentPause       = usePatientStore(s => s.toggleVentilatorPause);
@@ -502,13 +517,45 @@ export default function VentilatorPanel({ isOpen, onClose }: VentilatorPanelProp
   const ppeak     = Math.round(v.ppico)  || 0;
   const pplat     = Math.round(v.pplat)  || 0;
   const deltaP    = Math.round(v.deltaP) || 0;
-  const vte       = vent.vt;
-  const ve        = ((rr * vte) / 1000).toFixed(1);
   const fio2Pct   = Math.round(vent.fio2 * 100);
   const modeLabel = MODES.find(m => m.key === vent.mode)?.label ?? 'VCV';
+
+  // ── Measured values (engine), not the dial settings ───────────────────────
+  // vte used to read `vent.vt` — the knob position — which made leak and
+  // VTi/VTe divergence impossible to observe.
+  const hasBreath = breath.breathId > 0;
+  const vti       = hasBreath ? Math.round(breath.vtInsp) : 0;
+  const vte       = hasBreath ? Math.round(breath.vtExp)  : 0;
+  const ve        = hasBreath ? breath.minVol.toFixed(1)  : '0.0';
+  const pMean     = hasBreath ? breath.pMean.toFixed(1)   : '—';
+  const cStat     = hasBreath ? Math.round(breath.cStatMeasured) : 0;
+  const rAw       = hasBreath ? breath.rAwMeasured.toFixed(1) : '—';
+  const autoPeep  = hasBreath ? breath.autoPeep : 0;
+  const mechPower = hasBreath ? breath.mechPowerJmin.toFixed(1) : '—';
+  // Expiratory time constant. Both factors come from the engine, so a zero
+  // resistance shows as "—" instead of being papered over with a floor value.
+  const tau       = hasBreath && breath.rAwMeasured > 0 && breath.cStatMeasured > 0
+    ? ((breath.rAwMeasured * breath.cStatMeasured) / 1000).toFixed(2) : '—';
+  const peepTotal = (vent.peep + autoPeep).toFixed(1);
+  const ieLabel   = hasBreath && breath.ieRatio > 0
+    ? `1:${(1 / breath.ieRatio).toFixed(1)}` : '—';
+  // Leak is the VTi/VTe gap: cuff leak, circuit disconnection or a chest drain.
+  const leakPct   = vti > 0 ? Math.max(0, Math.round(((vti - vte) / vti) * 100)) : 0;
+  // Protective ventilation is dosed on predicted body weight, never actual.
+  const pbwKg     = profile?.pbwKg && profile.pbwKg > 0 ? profile.pbwKg : v.weight;
+  const vtPerKg   = pbwKg > 0 && vte > 0 ? (vte / pbwKg).toFixed(1) : '—';
+
   const ppeakAlarm = ppeak > 40;
   const ppeakWarn  = ppeak > 30 && !ppeakAlarm;
   const dpAlarm    = deltaP > 15;
+  const autoPeepAlarm = autoPeep > 5;
+  const autoPeepWarn  = autoPeep > 2 && !autoPeepAlarm;
+  const cStatAlarm    = cStat > 0 && cStat < 25;
+  const rAwAlarm      = hasBreath && breath.rAwMeasured > 15;
+  const mpAlarm       = hasBreath && breath.mechPowerJmin > 17;  // Serpa Neto ICM 2018
+  const leakAlarm     = leakPct > 20;
+  const vtKgAlarm     = vtPerKg !== '—' && parseFloat(vtPerKg) > 8;   // ARDSNet
+  const vtKgWarn      = vtPerKg !== '—' && parseFloat(vtPerKg) > 6.5 && !vtKgAlarm;
 
   // ARDS info para reclutamiento
   const ardsActive   = ards.isActive;
@@ -739,7 +786,7 @@ export default function VentilatorPanel({ isOpen, onClose }: VentilatorPanelProp
 
           {/* ─ DERECHA: Monitoreo ─ */}
           <div style={{
-            width: 165, flexShrink: 0,
+            width: 190, flexShrink: 0,
             background: C.bg,
             padding: '8px 10px',
             display: 'flex', flexDirection: 'column', gap: 5,
@@ -750,13 +797,36 @@ export default function VentilatorPanel({ isOpen, onClose }: VentilatorPanelProp
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
               <MonCard label="FR TOTAL" value={rr}       unit="br/m" />
+              <MonCard label="I:E"      value={ieLabel}  unit="" />
+              <MonCard label="VTI"      value={vti}      unit="mL" />
               <MonCard label="VTE"      value={vte}      unit="mL" />
+              <MonCard label="VT/kg"    value={vtPerKg}  unit="mL/kg" alarm={vtKgAlarm} warn={vtKgWarn} />
+              <MonCard label="FUGA"     value={`${leakPct}%`} unit="" alarm={leakAlarm} />
+              <MonCard label="Ve"       value={ve}       unit="L/m" />
+              <MonCard label="FiO₂"     value={`${fio2Pct}%`} unit="" />
+            </div>
+
+            <div style={{ fontSize: '0.36rem', fontWeight: 900, letterSpacing: '0.14em', color: C.dimText, marginTop: 3 }}>
+              PRESIONES
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
               <MonCard label="PPICO"    value={ppeak}    unit="cmH₂O" alarm={ppeakAlarm} warn={ppeakWarn} />
               <MonCard label="PPLAT"    value={pplat}    unit="cmH₂O" />
-              <MonCard label="Ve"       value={ve}       unit="L/m" />
+              <MonCard label="PMEDIA"   value={pMean}    unit="cmH₂O" />
               <MonCard label="ΔP"       value={deltaP}   unit="cmH₂O" alarm={dpAlarm} />
-              <MonCard label="FiO₂"     value={`${fio2Pct}%`} unit="" />
               <MonCard label="PEEP"     value={vent.peep} unit="cmH₂O" />
+              <MonCard label="PEEP TOT" value={peepTotal} unit="cmH₂O" alarm={autoPeepAlarm} warn={autoPeepWarn} />
+              <MonCard label="autoPEEP" value={autoPeep.toFixed(1)} unit="cmH₂O" alarm={autoPeepAlarm} warn={autoPeepWarn} />
+              <MonCard label="POT MEC"  value={mechPower} unit="J/min" alarm={mpAlarm} />
+            </div>
+
+            <div style={{ fontSize: '0.36rem', fontWeight: 900, letterSpacing: '0.14em', color: C.dimText, marginTop: 3 }}>
+              MECÁNICA
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+              <MonCard label="CSTAT"    value={cStat > 0 ? cStat : '—'} unit="mL/cmH₂O" alarm={cStatAlarm} />
+              <MonCard label="RAW"      value={rAw}      unit="cmH₂O/L/s" alarm={rAwAlarm} />
+              <MonCard label="τ = R×C"  value={tau}      unit="s" />
             </div>
 
             {deltaP > 0 && (
@@ -776,47 +846,6 @@ export default function VentilatorPanel({ isOpen, onClose }: VentilatorPanelProp
               </div>
             )}
 
-            <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 5, marginTop: 2 }}>
-              <div style={{ fontSize: '0.33rem', color: C.dimText, letterSpacing: '0.1em' }}>POTENCIA MECÁNICA</div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
-                <span style={{
-                  fontSize: '0.85rem', fontWeight: 900, fontFamily: 'monospace',
-                  color: v.mechanicalPower > 17 ? C.lcdAlarm : v.mechanicalPower > 12 ? C.lcdWarn : C.lcd,
-                }}>
-                  {(v.mechanicalPower || 0).toFixed(1)}
-                </span>
-                <span style={{ fontSize: '0.33rem', color: C.dimText }}>J/min</span>
-              </div>
-            </div>
-
-            {/* R y C estimados */}
-            <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 5, marginTop: 2 }}>
-              <div style={{ fontSize: '0.33rem', color: C.dimText, letterSpacing: '0.1em', marginBottom: 3 }}>MECÁNICA PULMONAR</div>
-              {(() => {
-                const fl_s = Math.max(0.1, vent.flowRate / 60);
-                const R_est = Math.max(2, Math.min(40, (v.ppico - v.pplat) / fl_s));
-                const C_est = Math.max(10, Math.min(200, vent.vt / Math.max(1, v.pplat - vent.peep)));
-                const tau_est = (R_est * C_est / 1000).toFixed(2);
-                return (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3 }}>
-                    <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 4, padding: '3px 5px' }}>
-                      <div style={{ fontSize: '0.3rem', color: C.dimText }}>R</div>
-                      <div style={{ fontSize: '0.65rem', fontWeight: 700, color: C.brightText, fontFamily: 'monospace' }}>{R_est.toFixed(0)}</div>
-                      <div style={{ fontSize: '0.28rem', color: C.dimText }}>cmH₂O·s/L</div>
-                    </div>
-                    <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 4, padding: '3px 5px' }}>
-                      <div style={{ fontSize: '0.3rem', color: C.dimText }}>C</div>
-                      <div style={{ fontSize: '0.65rem', fontWeight: 700, color: C.brightText, fontFamily: 'monospace' }}>{C_est.toFixed(0)}</div>
-                      <div style={{ fontSize: '0.28rem', color: C.dimText }}>mL/cmH₂O</div>
-                    </div>
-                    <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 4, padding: '3px 5px', gridColumn: '1 / -1' }}>
-                      <div style={{ fontSize: '0.3rem', color: C.dimText }}>τ = R×C</div>
-                      <div style={{ fontSize: '0.65rem', fontWeight: 700, color: C.accent, fontFamily: 'monospace' }}>{tau_est} s</div>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
           </div>
         </div>
 

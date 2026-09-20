@@ -6,10 +6,37 @@ import React, { useRef, useEffect, useState, memo } from 'react';
 import PersistentWaveCanvas from './PersistentWaveCanvas';
 import type { WaveChannelConfig } from './PersistentWaveCanvas';
 
+// Fixed clinical ranges, mirroring the scale selector of a bedside ICU
+// ventilator (Mindray SM/SV, Dräger Evita). The first entry is the default;
+// the canvas exposes a button to cycle through the rest.
 const CHANNELS: WaveChannelConfig[] = [
-  { key: 'paw',  color: '#f5c518', label: 'PRESIÓN', unit: 'cmH₂O', minRange: 15,  hasZero: false },
-  { key: 'flow', color: '#3ddc84', label: 'FLUJO',   unit: 'L/min',  minRange: 30,  hasZero: true  },
-  { key: 'vol',  color: '#22d3ee', label: 'VOLUMEN', unit: 'mL',     minRange: 200, hasZero: false },
+  {
+    key: 'paw', color: '#f5c518', label: 'PRESIÓN', unit: 'cmH₂O',
+    initialScale: 0,
+    scales: [
+      { min: 0, max: 40, step: 10 },   // rango adulto habitual
+      { min: 0, max: 60, step: 20 },   // presiones altas / SDRA severo
+      { min: 0, max: 80, step: 20 },   // obstrucción grave
+    ],
+  },
+  {
+    key: 'flow', color: '#3ddc84', label: 'FLUJO', unit: 'L/min',
+    initialScale: 0,
+    scales: [
+      { min: -60,  max: 60,  step: 30 },
+      { min: -120, max: 120, step: 60 },  // flujos pico altos
+      { min: -30,  max: 30,  step: 15 },  // detalle de flujo espiratorio
+    ],
+  },
+  {
+    key: 'vol', color: '#22d3ee', label: 'VOLUMEN', unit: 'mL',
+    initialScale: 0,
+    scales: [
+      { min: 0, max: 800,  step: 200 },
+      { min: 0, max: 1500, step: 500 },
+      { min: 0, max: 400,  step: 100 },  // VT bajo / ventilación protectora
+    ],
+  },
 ];
 
 interface PersistentWavePanelProps {
