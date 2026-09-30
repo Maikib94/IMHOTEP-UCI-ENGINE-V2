@@ -23,3 +23,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Sondas de diagnostico temporales: specs que se escriben para aislar un
+# fallo concreto y se borran al terminar. El prefijo __ las mantiene fuera
+# de git aunque sigan en disco mientras corre la investigacion.
+tests/**/__*.spec.ts

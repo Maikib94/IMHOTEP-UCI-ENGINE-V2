@@ -7,6 +7,7 @@ import { usePharmacologyStore, type DrugId, DRUG_CATALOG } from '../../store/use
 import { DRUG_MAX_DOSES } from '../../core/PharmacologyEngine';
 import { usePatientStore } from '../../store/usePatientStore';
 import { useUIStore } from '../../store/useUIStore';
+import { dosesFor } from '../../data/clinicalDoses';
 import { doseToCcH, type DrugUnit } from '../../utils/dilutionTable';
 
 // ─── Paleta de colores por tema ───────────────────────────────────────────────
@@ -74,10 +75,13 @@ export function InfusionControl({
     setRate(drug, parseFloat(next.toFixed(3)));
   }
 
+  const doses = dosesFor(drug);
+
   return (
-    <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border transition-colors mb-1 ${
+    <div className={`px-2 py-1 rounded-lg border transition-colors mb-1 ${
       isActive ? 'border-white/10 bg-[#0f1b2d]' : 'border-white/5 bg-[#0f172a]'
     }`}>
+    <div className="flex items-center gap-1.5">
       {/* Label */}
       <span className={`text-[0.5rem] font-bold w-24 shrink-0 truncate ${isActive ? t.text : 'text-slate-500'}`}>
         {label}
@@ -137,6 +141,34 @@ export function InfusionControl({
           className="text-[0.6rem] text-slate-600 hover:text-red-400 cursor-pointer shrink-0 leading-none">
           ⏹
         </button>
+      )}
+    </div>
+
+      {/* Dosis de referencia — un click deja la perfusion en una dosis
+          clinicamente correcta. El stepper de arriba sigue sirviendo para
+          titular fino; esto solo evita las ~25 pulsaciones que costaba
+          llegar desde cero al rango util de la droga. */}
+      {doses.length > 0 && (
+        <div className="flex items-center gap-1 mt-1 pl-[6.25rem]">
+          {doses.map(d => {
+            const selected = Math.abs(rate - d.value) < 1e-6;
+            return (
+              <button
+                key={d.label}
+                type="button"
+                onClick={() => setRate(drug, d.value)}
+                title={`${d.value} ${unit} — ${d.hint}`}
+                className={`px-1.5 py-[1px] rounded text-[0.42rem] font-bold border cursor-pointer transition-colors ${
+                  selected
+                    ? `${t.text} border-current bg-white/5`
+                    : 'text-slate-500 border-slate-700/60 hover:text-slate-200 hover:border-slate-500'
+                }`}
+              >
+                {d.label}
+              </button>
+            );
+          })}
+        </div>
       )}
     </div>
   );

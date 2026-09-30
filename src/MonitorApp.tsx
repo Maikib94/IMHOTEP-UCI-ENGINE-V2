@@ -7,6 +7,9 @@ import { useScenarioStore } from './store/useScenarioStore';
 import { usePathologyStore } from './store/usePathologyStore';
 import { useGlycemicStore } from './store/useGlycemicStore';
 import { CronosEngine } from './core/CronosEngine';
+import CommandPalette from './components/CommandPalette';
+import EmergencyActions from './components/EmergencyActions';
+import type { PanelId } from './data/commandCatalog';
 import LabPanel from './components/LabPanel';
 import WaveformMonitor from './components/WaveformMonitor';
 import { ARDSStatusBar } from './components/ARDSStatusBar';
@@ -83,6 +86,7 @@ var MonitorApp: React.FC = function () {
   var [showPiCCO, setShowPiCCO] = useState(false);
   var [showPiccoDropdown, setShowPiccoDropdown] = useState(false);
   var [showQuickAccess, setShowQuickAccess] = useState(false);
+  var [showPalette, setShowPalette] = useState(false);
   var [leftCollapsed, setLeftCollapsed] = useState(false);
   var [rightCollapsed, setRightCollapsed] = useState(false);
 
@@ -108,6 +112,32 @@ var MonitorApp: React.FC = function () {
   useEffect(() => {
     if (isVentConnected) setShowVent(true);
   }, [isVentConnected]);
+
+  // Ctrl+K / Cmd+K — paleta de comandos. Se captura en window para que
+  // funcione con el foco en cualquier sitio, salvo dentro de la propia
+  // paleta, donde Escape la cierra.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setShowPalette(v => !v);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  function openPanelById(panel: PanelId) {
+    switch (panel) {
+      case 'lab':        setShowLab(true); break;
+      case 'vent':       setShowVent(true); break;
+      case 'imaging':    setShowImaging(true); break;
+      case 'ecmocrrt':   setShowECMOCRRT(true); break;
+      case 'picco':      setShowPiCCO(true); break;
+      case 'instructor': setShowInstructor(true); break;
+      case 'scenario':   handleChangeCase(); break;
+    }
+  }
 
   function handleChangeCase() {
     useScenarioStore.getState().resetSimulation();
@@ -146,6 +176,11 @@ var MonitorApp: React.FC = function () {
       {/* ── MODAL SELECTOR — bloquea hasta selección de caso ── */}
       {!isSimStarted && <ScenarioSelectorModal />}
 
+      <CommandPalette
+        open={showPalette}
+        onClose={() => setShowPalette(false)}
+        onOpenPanel={openPanelById}
+      />
       <LabPanel isOpen={showLab} onClose={() => setShowLab(false)} />
       <ImagingPanel isOpen={showImaging} onClose={() => setShowImaging(false)} />
       <CustomCaseModal open={showCustomCase} onClose={() => setShowCustomCase(false)} />
@@ -227,6 +262,7 @@ var MonitorApp: React.FC = function () {
           {[1, 10, 60].map(x => (
             <button type="button" key={x} onClick={() => useTimeStore.getState().setSpeed(x)} style={{ background: spd === x ? '#1d4ed8' : '#1a2236', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, color: '#fff', fontFamily: MONO, fontWeight: 700, fontSize: '0.5rem', padding: '3px 6px', cursor: 'pointer' }}>{x}x</button>
           ))}
+          <EmergencyActions onOpenPalette={() => setShowPalette(true)} />
           <button type="button" onClick={() => setShowLab(true)} style={{ background: '#4c1d95', border: '1px solid rgba(167,139,250,0.3)', borderRadius: 4, color: '#c4b5fd', fontWeight: 700, fontSize: '0.55rem', padding: '3px 8px', cursor: 'pointer', marginLeft: 2 }}>LAB</button>
           {isVentConnected && (
             <button type="button" onClick={() => setShowVent(true)} style={{ background: '#0a2a0a', border: '1px solid rgba(52,211,153,0.4)', borderRadius: 4, color: '#34d399', fontWeight: 700, fontSize: '0.55rem', padding: '3px 8px', cursor: 'pointer', marginLeft: 2 }}>ARM</button>

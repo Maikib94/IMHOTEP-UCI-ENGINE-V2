@@ -20,6 +20,7 @@ import { AcuteMortalityEngine } from '../../src/core/AcuteMortalityEngine';
 import { resetAllEngines } from '../../src/core/resetAllEngines';
 import { resetAllStores } from './storeReset';
 import { installSeededRandom, restoreRandom } from './seededRandom';
+import { seedForTests } from './testSeed';
 
 export const SAMPLE_FIELDS = [
   'bloodVolume', 'strokeVolume', 'cardiacOutput', 'meanArterialPressure',
@@ -78,6 +79,11 @@ export function tickSubset(dt: number, engines: EngineName[]): void {
 export function resetEngines(): void {
   resetAllStores();
   resetAllEngines();
+  // resetAllEngines() termina llamando a resetRng(), que siembra con
+  // Date.now(). Sin volver a fijar la semilla aqui, cada corrida arranca con
+  // un ruido de FC distinto y los fixtures calibrados al filo cambian de
+  // desenlace entre ejecuciones identicas.
+  seedForTests();
 }
 
 /** Corre el escenario con el subconjunto de motores dado, muestreando cada
