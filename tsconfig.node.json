@@ -4,7 +4,11 @@
     "skipLibCheck": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    // Un proyecto referenciado no puede usar noEmit (TS6310), asi que los
+    // artefactos van a un directorio ya ignorado: antes caian en la raiz como
+    // vite.config.js y vite.config.d.ts, y acababan trackeados en git.
+    "outDir": "./node_modules/.tmp/tsconfig.node"
   },
   "include": [
     "vite.config.ts"
