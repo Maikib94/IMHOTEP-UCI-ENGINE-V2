@@ -113,9 +113,19 @@ function computeSnapshotFromPhysiology(): PiCCOSnapshot {
   );
 
   // ── PVPI (Kushimoto Crit Care 2012) ──────────────────────────────────────
+  // Con SDRA el indice arranca ya por encima de 3, no sube progresivamente
+  // hasta el: la definicion de Berlin (JAMA 2012) exige edema NO explicado por
+  // fallo cardiaco, es decir que la barrera alveolocapilar esta danada desde el
+  // diagnostico. Kushimoto situa el corte entre edema lesional e hidrostatico
+  // en PVPI ~3, con medias de 3,2-3,8 en SDRA establecido.
+  //
+  // La version anterior partia de 1,5 y necesitaba lungInjury > 0,43 para
+  // cruzar ese corte, asi que un SDRA moderado se leia como edema
+  // cardiogenico e invitaba justo a la conducta contraria: depletar en un
+  // pulmon que fuga en vez de proteger la ventilacion.
   const pvpi = clamp(1.0, 7.0,
     ardsOn
-      ? 1.5 + ardsInj * 3.5
+      ? 2.8 + ardsInj * 2.2
       : 1.5 + capLeak * 0.05
   );
 

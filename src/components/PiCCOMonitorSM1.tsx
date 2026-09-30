@@ -457,6 +457,7 @@ export default function PiCCOMonitorSM1({ isOpen, onClose }: PiCCOMonitorSM1Prop
           <PhotorealisticDial label="ScvO₂" value={String(snap ? Math.round(snap.scvo2) : '--')} unit="%" normal={[70, 80]}  />
         </div>
       </div>
+
     </div>
   );
 }
