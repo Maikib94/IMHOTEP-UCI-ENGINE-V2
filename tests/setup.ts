@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { beforeEach } from 'vitest';
 import { mockOffscreenCanvas } from './helpers/mockOffscreenCanvas';
 import { resetAllStores }      from './helpers/storeReset';
-import { seedAll }             from '../src/core/rng';
+import { seedForTests }        from './helpers/testSeed';
 
 mockOffscreenCanvas();
 
@@ -27,9 +27,7 @@ mockOffscreenCanvas();
  * Los tests que necesiten otra semilla siguen pudiendo llamar seedAll() con la
  * suya; este beforeEach solo garantiza el punto de partida.
  */
-const TEST_SEED = 20260101;
-
 beforeEach(() => {
   resetAllStores();
-  seedAll(TEST_SEED);
+  seedForTests();
 });
