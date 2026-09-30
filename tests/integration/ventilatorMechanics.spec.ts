@@ -5,12 +5,11 @@
 // del paciente. Corre el motor de verdad, no la mecanica de asincronia en
 // aislado (eso vive en tests/unit/ventilatorAsynchrony.spec.ts).
 
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   VentilatorSM100Engine, deriveMechanicsFromPathology,
   type SM100Settings, type PatientMechanics,
 } from '../../src/core/VentilatorSM100Engine';
-import { resetRng } from '../../src/core/rng';
 
 function settings(over: Partial<SM100Settings> = {}): SM100Settings {
   return {
@@ -39,13 +38,11 @@ function run(eng: VentilatorSM100Engine, s: SM100Settings, m: PatientMechanics, 
   for (let i = 0; i < Math.round(seconds / dt); i++) eng.update(dt, s, m);
 }
 
-// Este archivo no siembra el RNG: los tests de drive son funciones puras y
-// los del motor no dependen del azar salvo por el auto-disparo, cuya
-// probabilidad por respiracion es despreciable. Sembrarlo aqui dejaba el
-// estado global del stream alterado para los archivos que comparten worker
-// —CardiovascularEngine saca de ahi el ruido de FC— y eso descalibraba el
-// fixture de acidosis lactica de acidbase.ownership, que vive al filo.
-afterAll(() => resetRng());
+// Ya no hace falta restaurar nada aqui: tests/setup.ts siembra con una
+// semilla fija en cada beforeEach, asi que ningun archivo puede dejar el
+// stream en un estado que afecte al siguiente. Llamar resetRng() al terminar
+// seria ahora lo contrario de lo que se quiere — volveria a sembrar con
+// Date.now().
 
 describe('Balance de volumenes', () => {
   it('sin atrapamiento, el volumen espirado iguala al inspirado', () => {
