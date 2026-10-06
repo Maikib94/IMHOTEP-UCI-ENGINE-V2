@@ -194,3 +194,21 @@ describe('Coherencia con la patología simulada', () => {
     expect(interpretPicco(snap({ evlwi: 12, pvpi }), VALID).edema).toBe('hidrostatico');
   });
 });
+
+describe('Indexación del SVRI', () => {
+  it('indexar multiplica por la superficie corporal, no divide', () => {
+    // SVR = 80·(PAM − PVC)/CO ; SVRI = 80·(PAM − PVC)/CI ; CI = CO/BSA
+    // ⇒ SVRI = SVR · BSA. Dividir dejaba a un paciente normal en ~580, por
+    // debajo del rango, y el panel lo leía como vasoplejia: todo el mundo
+    // salía distributivo y se recomendaba vasopresor sin motivo.
+    const svr = 1100, bsa = 1.9;
+    const svri = svr * bsa;
+    expect(svri).toBeGreaterThanOrEqual(PICCO_RANGES.svri.low);
+    expect(svri).toBeLessThanOrEqual(PICCO_RANGES.svri.high);
+    expect(svr / bsa).toBeLessThan(PICCO_RANGES.svri.low);
+
+    // Y con ese SVRI correcto, un paciente por lo demás normal no se lee
+    // como shock distributivo.
+    expect(interpretPicco(snap({ svri }), VALID).profile).toBe('normal');
+  });
+});
