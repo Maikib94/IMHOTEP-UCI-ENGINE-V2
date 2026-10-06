@@ -54,6 +54,8 @@ describe('Escenarios nuevos — existen y están en el catálogo', () => {
     'resp_asma_grave_vmni',
     'trauma_pelvis_shock_hemorragico',
     'trauma_tce_abdomen_conflicto',
+    'neuro_tce_leve_vigilancia',
+    'resp_asma_moderada_respuesta',
   ];
 
   it.each(ids)('%s está registrado en ALL_SCENARIOS', id => {
@@ -71,7 +73,8 @@ describe('Escenarios nuevos — existen y están en el catálogo', () => {
   it('usan subtipos que antes ningún escenario explotaba', () => {
     const subtipos = ids.flatMap(id => byId(id).pathologyConfigs.map(p => p.subtype));
     for (const esperado of ['shock_cardiogenico', 'iam_nstemi', 'aspirativa', 'grave',
-                            'fractura_pelvis_mayor', 'tce_abdomen']) {
+                            'fractura_pelvis_mayor', 'tce_abdomen',
+                            'tce_leve', 'moderada']) {
       expect(subtipos).toContain(esperado);
     }
   });
@@ -111,9 +114,36 @@ describe('Los perfiles hemodinámicos salen como el caso pretende enseñar', () 
   });
 
   it('los casos sin shock no se leen como shock', () => {
-    for (const id of ['cardio_scasest_alto_riesgo', 'resp_asma_grave_vmni']) {
+    for (const id of ['cardio_scasest_alto_riesgo', 'resp_asma_grave_vmni',
+                      'neuro_tce_leve_vigilancia', 'resp_asma_moderada_respuesta']) {
       const r = interpretPicco(piccoFrom(id), PASIVO);
       expect(['normal', 'distributivo', 'indeterminado']).toContain(r.profile);
     }
+  });
+});
+
+describe('Cobertura de los subtipos que el motor modela', () => {
+  it('ningún subtipo clínico queda ya sin un caso que lo use', () => {
+    // Este test es la red que impide que el catálogo vuelva a separarse de lo
+    // que el motor sabe simular: añadir un subtipo nuevo a usePathologyStore
+    // sin escribirle un escenario falla aquí.
+    const usados = new Set(
+      ALL_SCENARIOS.flatMap(s => s.pathologyConfigs.map(p => p.subtype)).filter(Boolean),
+    );
+    const modelados = [
+      'tce_leve', 'tce_moderado', 'tce_grave', 'hsa', 'acv_isquemico',
+      'acv_hemorragico', 'status_epileptico', 'meningitis_bacteriana',
+      'iam_stemi_anterior', 'iam_stemi_inferior', 'iam_nstemi',
+      'icc_aguda_descompensada', 'shock_cardiogenico', 'taponamiento',
+      'diseccion_aorta', 'tep_masivo', 'farva',
+      'bacteriana', 'viral', 'fungica', 'aspirativa',
+      'moderada', 'grave', 'status_asthmaticus',
+      'exacerbacion_no_infecciosa', 'exacerbacion_infecciosa',
+      'tce_aislado', 'tce_torax', 'tce_abdomen', 'tce_torax_abdomen',
+      'fractura_pelvis_mayor',
+      'fuego', 'electrico', 'explosion', 'quimico',
+    ];
+    const huerfanos = modelados.filter(m => !usados.has(m));
+    expect(huerfanos).toEqual([]);
   });
 });
