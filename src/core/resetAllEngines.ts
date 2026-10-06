@@ -15,6 +15,7 @@
 // por legibilidad.
 
 import { MicrobiologyEngine } from './MicrobiologyEngine';
+import { EndocrineEngine } from './EndocrineEngine';
 import { InfectoEngine } from './InfectoEngine';
 import { PathologyEngine } from './PathologyEngine';
 import { PharmacologyEngine } from './PharmacologyEngine';
@@ -37,6 +38,7 @@ export function resetAllEngines(): void {
   // determinista por defecto. El llamador (test via installSeededRandom(),
   // o produccion via useScenarioStore.applyScenario()) debe sembrar
   // explicitamente despues si necesita reproducibilidad — ver src/core/rng.ts.
+  EndocrineEngine.getInstance().reset();
   resetRng();
   MicrobiologyEngine.getInstance().reset();
   InfectoEngine.getInstance().reset();

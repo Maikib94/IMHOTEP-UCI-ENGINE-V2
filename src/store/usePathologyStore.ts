@@ -31,7 +31,7 @@ export type ArdsTrigger =
 export type PathologyDomain =
   | 'sepsis' | 'ards' | 'hemorrhagicShock'
   | 'neuroCritical' | 'polytrauma' | 'burn'
-  | 'asthma' | 'copd' | 'cardio' | 'pneumonia';
+  | 'asthma' | 'copd' | 'cardio' | 'pneumonia' | 'endocrine';
 
 /** Categoría clínica del caso — gate de visibilidad PIC + sidebar Fase 6.
  *  Robba C et al., Lancet Neurol 2021 (SYNAPSE-ICU): monitoreo PIC selectivo. */
@@ -118,6 +118,22 @@ export interface BurnState extends GenericPathologyState {
   subtype: BurnSubtype | null;
   tbsaPercent: number; airwayBurn: boolean; parklandDeliveredMl: number;
 }
+/** Crisis endocrinas agudas. Los dos polos tiroideos son opuestos en todo —
+ *  frecuencia, temperatura, gasto cardiaco— y por eso se enseñan juntos. */
+export type EndocrineSubtype =
+  | 'tormenta_tiroidea'      // tirotoxicosis descompensada (Burch-Wartofsky)
+  | 'coma_mixedematoso'      // hipotiroidismo descompensado
+  | 'cetoacidosis'           // CAD
+  | 'hiperosmolar'           // EHH
+  | 'crisis_suprarrenal';    // insuficiencia suprarrenal aguda
+
+export interface EndocrineState extends GenericPathologyState {
+  subtype: EndocrineSubtype | null;
+  /** Carga hormonal tiroidea circulante, 0-1. Cae con tionamidas y con el
+   *  bloqueo de la conversion periferica; es lo que el tratamiento mueve. */
+  thyroidLoad: number;
+}
+
 export interface AsthmaState  extends GenericPathologyState { subtype: AsthmaSubtype  | null; }
 export interface CopdState    extends GenericPathologyState { subtype: CopdSubtype    | null; }
 export interface CardioState  extends GenericPathologyState { subtype: CardioSubtype  | null; }
@@ -174,6 +190,7 @@ const INITIAL_HEMORRHAGIC_SHOCK: HemorrhagicShockState = {
 const INITIAL_NEURO: NeuroCriticalState       = { isActive: false, severity: 0, subtype: null };
 const INITIAL_POLYTRAUMA: PolytraumaState     = { isActive: false, severity: 0, subtype: null, tceScore: 0, thoracicScore: 0, abdominalScore: 0 };
 const INITIAL_BURN: BurnState                 = { isActive: false, severity: 0, subtype: null, tbsaPercent: 0, airwayBurn: false, parklandDeliveredMl: 0 };
+const INITIAL_ENDOCRINE: EndocrineState       = { isActive: false, severity: 0, subtype: null, thyroidLoad: 0 };
 const INITIAL_ASTHMA: AsthmaState             = { isActive: false, severity: 0, subtype: null };
 const INITIAL_COPD: CopdState                 = { isActive: false, severity: 0, subtype: null };
 const INITIAL_CARDIO: CardioState             = { isActive: false, severity: 0, subtype: null };
@@ -190,6 +207,7 @@ interface PathologyState {
   neuroCritical: NeuroCriticalState;
   polytrauma: PolytraumaState;
   burn: BurnState;
+  endocrine: EndocrineState;
   asthma: AsthmaState;
   copd: CopdState;
   cardio: CardioState;
@@ -229,6 +247,8 @@ interface PathologyState {
   // ── Nuevos dominios ───────────────────────────────────────────────────────
   activatePathology: (domain: PathologyDomain, subtype: string | null, severity: number) => void;
   deactivatePathology: (domain: PathologyDomain) => void;
+  /** Ajusta la carga hormonal tiroidea (EndocrineEngine). */
+  setThyroidLoad: (load: number) => void;
   setBurnTbsa: (pct: number) => void;
   setBurnAirway: (v: boolean) => void;
   addParklandDelivered: (ml: number) => void;
@@ -254,6 +274,7 @@ export const usePathologyStore = create<PathologyState>((set) => ({
   neuroCritical: { ...INITIAL_NEURO },
   polytrauma: { ...INITIAL_POLYTRAUMA },
   burn: { ...INITIAL_BURN },
+  endocrine: { ...INITIAL_ENDOCRINE },
   asthma: { ...INITIAL_ASTHMA },
   copd: { ...INITIAL_COPD },
   cardio: { ...INITIAL_CARDIO },
@@ -415,6 +436,13 @@ export const usePathologyStore = create<PathologyState>((set) => ({
         case 'copd':          return { copd: { ...s.copd, isActive: true, severity: sev, subtype: subtype as CopdSubtype } };
         case 'cardio':        return { cardio: { ...s.cardio, isActive: true, severity: sev, subtype: subtype as CardioSubtype } };
         case 'pneumonia':     return { pneumonia: { ...s.pneumonia, isActive: true, severity: sev, subtype: subtype as PneumoniaSubtype } };
+        case 'endocrine':     return { endocrine: {
+          ...s.endocrine, isActive: true, severity: sev,
+          subtype: subtype as EndocrineSubtype,
+          // La carga hormonal arranca en la severidad: es lo que el
+          // tratamiento tiene que bajar, y lo unico que lo baja.
+          thyroidLoad: (subtype === 'tormenta_tiroidea') ? sev : 0,
+        } };
         default:              return {};
       }
     });
@@ -436,10 +464,15 @@ export const usePathologyStore = create<PathologyState>((set) => ({
         case 'copd':          return { copd: { ...INITIAL_COPD } };
         case 'cardio':        return { cardio: { ...INITIAL_CARDIO } };
         case 'pneumonia':     return { pneumonia: { ...INITIAL_PNEUMONIA } };
+        case 'endocrine':     return { endocrine: { ...INITIAL_ENDOCRINE } };
         default:              return {};
       }
     });
   },
+
+  setThyroidLoad: (load) => set(s => ({
+    endocrine: { ...s.endocrine, thyroidLoad: Math.max(0, Math.min(1, load)) },
+  })),
 
   // ── Burn extras ───────────────────────────────────────────────────────────
   setBurnTbsa: (pct) => set((s) => ({ burn: { ...s.burn, tbsaPercent: Math.max(0, Math.min(100, pct)) } })),
