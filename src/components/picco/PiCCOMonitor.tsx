@@ -8,6 +8,7 @@
 /* eslint-disable react/forbid-dom-props */
 
 import React, { useMemo, memo } from 'react';
+import PiCCOInterpretation from './PiCCOInterpretation';
 import { useMonitoringStore, type PiCCOSnapshot } from '../../store/useMonitoringStore';
 import { usePatientStore }  from '../../store/usePatientStore';
 import { useTimeStore }     from '../../store/useTimeStore';
@@ -362,7 +363,39 @@ const PiCCOMonitor: React.FC = memo(function PiCCOMonitor() {
     return String(Math.round((snap.ci * 1000) / hrSafe));
   }, [snap, hr]);
 
-  if (mode !== 'picco') return null;
+  // Sin PiCCO activo el panel devolvia null, asi que al abrirlo se veia un
+  // cajon negro sin una sola palabra que explicara por que. Decir que falta,
+  // y ofrecer el paso que falta, cuesta lo mismo que no decir nada.
+  if (mode !== 'picco') {
+    return (
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'center', gap: 10, padding: '40px 24px', textAlign: 'center',
+      }}>
+        <div style={{ fontSize: 26, opacity: 0.35 }}>⊘</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#cbd5e1' }}>
+          Monitorización PiCCO no activa
+        </div>
+        <div style={{ fontSize: 11, color: '#64748b', maxWidth: 360, lineHeight: 1.6 }}>
+          El PiCCO requiere un catéter arterial femoral con termodilución transpulmonar.
+          Actívelo para obtener gasto cardíaco, precarga volumétrica y agua pulmonar
+          extravascular.
+        </div>
+        <button
+          type="button"
+          onClick={() => useMonitoringStore.getState().setInvasiveMode('picco')}
+          style={{
+            marginTop: 4, padding: '6px 14px', borderRadius: 6, cursor: 'pointer',
+            background: 'rgba(139,92,246,0.14)', border: '1px solid rgba(139,92,246,0.45)',
+            color: '#c4b5fd', fontSize: 11, fontWeight: 700,
+            fontFamily: 'ui-monospace, monospace',
+          }}
+        >
+          ACTIVAR PiCCO
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div style={{
@@ -489,6 +522,17 @@ const PiCCOMonitor: React.FC = memo(function PiCCOMonitor() {
         <PhotorealisticDial label="SVV"   value={String(snap ? Math.round(snap.svv) : '--')}       unit="%"        normal={[0,12]}    />
         <PhotorealisticDial label="SVI"   value={svi}                                              unit="mL/m²"    normal={[35,50]}   />
         <PhotorealisticDial label="ScvO₂" value={String(snap ? Math.round(snap.scvo2) : '--')}     unit="%"        normal={[70,80]}   />
+      </div>
+
+      {/* Lectura hemodinamica. Los numeros de arriba no se leen de uno en uno:
+          el patron sale de cruzarlos, y ese cruce es lo que decide entre
+          volumen, inotropico y vasopresor. */}
+      <div style={{
+        gridColumn: '1 / -1',
+        borderTop: '1px solid rgba(255,255,255,0.07)',
+        paddingTop: 8, marginTop: 2,
+      }}>
+        <PiCCOInterpretation />
       </div>
     </div>
   );

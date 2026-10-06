@@ -10,6 +10,7 @@ import {
   ASYNC_LABELS_ES, ASYNC_HINTS_ES, AI_SEVERE_THRESHOLD, type AsynchronyType,
 } from '../core/VentilatorAsynchrony';
 import VentilatorCurves from './VentilatorCurves';
+import VentilatorLoops from './ventilator/VentilatorLoops';
 import {
   useManeuverHistoryStore,
   fmtSimTime,
@@ -406,6 +407,7 @@ export default function VentilatorPanel({ isOpen, onClose }: VentilatorPanelProp
   const [recruitProgress, setRecruitProgress]  = useState(0);
   const [recruitEffect,   setRecruitEffect]    = useState<'none' | 'applied' | 'fibrotic'>('none');
   const [showAsyncDetail, setShowAsyncDetail]  = useState(false);
+  const [showLoops,       setShowLoops]        = useState(true);
 
   // Breath metrics straight from the ventilator engine. The store only mirrors
   // 6 of the 22 fields SM100BreathMetrics carries (RespiratoryEngine.ts:376),
@@ -797,6 +799,34 @@ export default function VentilatorPanel({ isOpen, onClose }: VentilatorPanelProp
             overflow: 'hidden',
           }}>
             <VentilatorCurves heights={[88, 88, 88]} />
+
+            {/* Bucles del ultimo ciclo. Las curvas contra el tiempo dicen QUE
+                pasa; los bucles dicen POR QUE: la pendiente del P-V es la
+                compliance y su aplanamiento superior avisa de sobredistension,
+                mientras que una rama espiratoria excavada en el F-V delata
+                obstruccion. Se pueden plegar porque en una pantalla ya cargada
+                no siempre se quieren. */}
+            <div style={{ borderTop: `1px solid ${C.sep}`, padding: '4px 6px' }}>
+              <button
+                type="button"
+                onClick={() => setShowLoops(v => !v)}
+                title={showLoops ? 'Ocultar bucles' : 'Mostrar bucles presión-volumen y flujo-volumen'}
+                style={{
+                  background: 'transparent', border: 'none', cursor: 'pointer',
+                  color: showLoops ? C.accent : C.dimText,
+                  fontSize: '0.36rem', fontWeight: 900, letterSpacing: '0.14em',
+                  fontFamily: 'monospace', padding: '2px 0',
+                }}
+              >
+                {showLoops ? '▾' : '▸'} BUCLES P–V / F–V
+              </button>
+              {showLoops && (
+                <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                  <VentilatorLoops kind="pv" width={215} height={175} />
+                  <VentilatorLoops kind="fv" width={215} height={175} />
+                </div>
+              )}
+            </div>
           </div>
 
           {/* ─ DERECHA: Monitoreo ─ */}
