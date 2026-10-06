@@ -12,7 +12,7 @@ export const endocrineScenarios: ScenarioDefinition[] = [
     baseSeverity: 0.75,
     tags: ['DKA', 'endocrino', 'metabólico', 'ácido-base'],
     pathologyConfigs: [
-      { domain: 'sepsis', subtype: 'dka', baseSeverity: 0.85 },
+      { domain: 'endocrine', subtype: 'cetoacidosis', baseSeverity: 0.85 },
     ],
     initialVitals: {
       heartRate: 124, systolicBP: 96, diastolicBP: 58,
@@ -33,7 +33,9 @@ export const endocrineScenarios: ScenarioDefinition[] = [
     baseSeverity: 0.78,
     tags: ['HHS', 'endocrino', 'anciano', 'deshidratación'],
     pathologyConfigs: [
-      { domain: 'sepsis', subtype: 'hhs', baseSeverity: 0.80 },
+      { domain: 'endocrine', subtype: 'hiperosmolar', baseSeverity: 0.80 },
+      // La sepsis acompañante es real aqui: la infeccion es el desencadenante
+      // mas frecuente del estado hiperosmolar (Kitabchi, Diabetes Care 2009).
       { domain: 'sepsis',    subtype: null,   baseSeverity: 0.40 },
     ],
     initialVitals: {
@@ -55,7 +57,7 @@ export const endocrineScenarios: ScenarioDefinition[] = [
     baseSeverity: 0.82,
     tags: ['tormenta_tiroidea', 'endocrino', 'hipertermia', 'FA'],
     pathologyConfigs: [
-      { domain: 'sepsis', subtype: null, baseSeverity: 0.88 },
+      { domain: 'endocrine', subtype: 'tormenta_tiroidea', baseSeverity: 0.88 },
     ],
     initialVitals: {
       heartRate: 165, systolicBP: 168, diastolicBP: 88,
@@ -66,5 +68,52 @@ export const endocrineScenarios: ScenarioDefinition[] = [
     },
     clinicalNotes: 'SECUENCIA DE FOWLER: (1) PTU 500-1000 mg dosis carga vía SNG → luego 200 mg c/4h (bloquea síntesis + conversión T4→T3). (2) Yodo (Lugol) 5-10 gotas c/8h ≥1h DESPUÉS del PTU (bloquea release; si PTU antes, evitar síntesis adicional). (3) Propranolol 0.5-1 mg IV lento, titular a FC. (4) Hidrocortisona 100 mg IV c/8h (bloquea conversión periférica). (5) Antipiréticos — NO AAS (desplaza T4 de proteínas). (6) Manejo FA: amiodarona IV si inestable hemodinámicamente.',
     references: ['Burch Endocrinol Metab Clin 1993', 'Ross JCEM 2016', 'Akamizu Thyroid 2012'],
+  },
+  // ── Coma mixedematoso ─────────────────────────────────────────────────────
+  // El polo opuesto de la tormenta tiroidea, y el que faltaba. Comparten eje y
+  // se aprenden por contraste: todo lo que alla esta alto, aqui esta bajo.
+  {
+    id: 'endo_coma_mixedematoso',
+    category: 'endocrino',
+    name: 'Coma Mixedematoso',
+    description: 'Mujer de 74 años que abandonó la levotiroxina hace meses, encontrada en su domicilio en invierno. Temperatura 32,4 °C, bradicardia 42, hipoventilación con hipercapnia, bradipsiquia que progresa a estupor. TSH 98, T4 libre indetectable.',
+    baseSeverity: 0.84,
+    tags: ['Mixedema', 'Hipotiroidismo', 'Hipotermia', 'Hipercapnia', 'Levotiroxina IV'],
+    pathologyConfigs: [
+      { domain: 'endocrine', subtype: 'coma_mixedematoso', baseSeverity: 0.84 },
+    ],
+    initialVitals: {
+      heartRate: 42,
+      systolicBP: 92,
+      diastolicBP: 58,
+      meanArterialPressure: 69,
+      cardiacOutput: 3.1,
+      strokeVolume: 74,
+      svr: 1680,
+      cvp: 9,
+      spo2: 91,
+      respiratoryRate: 9,
+      paO2: 62,
+      paCO2: 58,
+      pfRatio: 295,
+      ardsActive: false,
+      icp: 10,
+      gcs: 8,
+      pupilState: 'reactive',
+      lactate: 2.2,
+      pH: 7.28,
+      hco3: 26.0,
+      baseExcess: -1.0,
+      temperature: 32.4,
+      glucoseMgdL: 58,
+      kPlasma: 4.2,
+      urineOutput: 0.3,
+      creatinine: 1.5,
+      weight: 66,
+    },
+    isVentilatorConnected: true,
+    ventilatorPreset: { mode: 'VC-AC', fio2: 0.40, vt: 400, peep: 5, setRR: 16 },
+    clinicalNotes: 'Todo lo que en la tormenta tiroidea está alto, aquí está bajo: bradicardia, hipotermia, hipoventilación con hipercapnia y descenso del nivel de conciencia. Levotiroxina IV en dosis de carga (200-400 mcg) seguida de mantenimiento. La hidrocortisona va ANTES que la hormona tiroidea: si coexiste insuficiencia suprarrenal, reponer tiroides primero acelera el metabolismo del cortisol que falta y puede desencadenar una crisis suprarrenal. Recalentamiento pasivo — el activo vasodilata y precipita colapso. La hipoglucemia y la hiponatremia acompañan y se corrigen despacio.',
+    references: ['Wartofsky L Thyroid 2006', 'Chiha M J Intensive Care Med 2015', 'Ross DS Thyroid 2016'],
   },
 ];

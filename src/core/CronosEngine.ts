@@ -20,6 +20,7 @@ import { NeuroEngine } from './NeuroEngine';
 import { LabEngine } from './LabEngine';
 import { PrognosisEngine } from './PrognosisEngine';
 import { GlycemicEngine } from './GlycemicEngine';
+import { EndocrineEngine } from './EndocrineEngine';
 import { useMonitoringStore } from '../store/useMonitoringStore';
 import { usePharmacologyStore } from '../store/usePharmacologyStore';
 import { CrosstalkEngine }     from './CrosstalkEngine';
@@ -235,6 +236,7 @@ export class CronosEngine {
     LabEngine.getInstance().update();
     PrognosisEngine.getInstance().update(dt);
     GlycemicEngine.getInstance().update(dt);
+    EndocrineEngine.getInstance().update(dt);
     CrosstalkEngine.getInstance().update(dt); // ECMO ↔ Vent + CRRT ↔ Pharma/Electrolytes
 
     // ── MORTALIDAD AGUDA (siempre al final — lee vitals finales del tick) ──────

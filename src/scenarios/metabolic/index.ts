@@ -10,7 +10,7 @@ export const metabolicScenarios: ScenarioDefinition[] = [
     baseSeverity: 0.80,
     tags: ['CAD', 'DKA', 'Cetoacidosis', 'Insulina IV', 'Hipokalemia'],
     pathologyConfigs: [
-      { domain: 'sepsis', subtype: 'metabolic_dka', baseSeverity: 0.75 },
+      { domain: 'endocrine', subtype: 'cetoacidosis', baseSeverity: 0.75 },
     ],
     initialVitals: { heartRate: 128, systolicBP: 92, diastolicBP: 58, meanArterialPressure: 69, spo2: 97, pH: 6.98, hco3: 4, baseExcess: -26, lactate: 3.4, temperature: 38.8 },
     isVentilatorConnected: false,
@@ -25,7 +25,7 @@ export const metabolicScenarios: ScenarioDefinition[] = [
     baseSeverity: 0.75,
     tags: ['EHH', 'HHS', 'Hiperosmolar', 'DM2', 'Rehidratación'],
     pathologyConfigs: [
-      { domain: 'sepsis', subtype: 'metabolic_hhs', baseSeverity: 0.70 },
+      { domain: 'endocrine', subtype: 'hiperosmolar', baseSeverity: 0.70 },
     ],
     initialVitals: { heartRate: 112, systolicBP: 100, diastolicBP: 62, meanArterialPressure: 75, spo2: 96, gcs: 10, temperature: 37.8, urineOutput: 0.15 },
     isVentilatorConnected: false,
@@ -70,7 +70,7 @@ export const metabolicScenarios: ScenarioDefinition[] = [
     baseSeverity: 0.85,
     tags: ['Tormenta Tiroidea', 'Tirotoxicosis', 'Propranolol', 'PTU'],
     pathologyConfigs: [
-      { domain: 'cardio', subtype: 'thyroid_storm', baseSeverity: 0.85 },
+      { domain: 'endocrine', subtype: 'tormenta_tiroidea', baseSeverity: 0.85 },
     ],
     initialVitals: { heartRate: 168, systolicBP: 178, diastolicBP: 88, meanArterialPressure: 118, temperature: 40.8, spo2: 95, lactate: 2.2 },
     isVentilatorConnected: false,
@@ -85,7 +85,7 @@ export const metabolicScenarios: ScenarioDefinition[] = [
     baseSeverity: 0.80,
     tags: ['Adrenal', 'Cortisol', 'Shock', 'Hidrocortisona', 'Mineralocorticoide'],
     pathologyConfigs: [
-      { domain: 'sepsis', subtype: 'adrenal_crisis', baseSeverity: 0.78 },
+      { domain: 'endocrine', subtype: 'crisis_suprarrenal', baseSeverity: 0.78 },
     ],
     initialVitals: { heartRate: 128, systolicBP: 68, diastolicBP: 40, meanArterialPressure: 49, temperature: 38.2, lactate: 4.2, urineOutput: 0.1 },
     isVentilatorConnected: false,
