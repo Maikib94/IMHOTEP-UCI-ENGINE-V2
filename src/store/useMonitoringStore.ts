@@ -130,7 +130,16 @@ function computeSnapshotFromPhysiology(): PiCCOSnapshot {
   );
 
   // ── SVRI ─────────────────────────────────────────────────────────────────
-  const svri = clamp(600, 4000, (v.svr ?? 1100) / bsa);
+  // Indexar MULTIPLICA por la superficie corporal, no divide:
+  //   SVR  = 80·(PAM − PVC)/CO        SVRI = 80·(PAM − PVC)/CI
+  // y como CI = CO/BSA, resulta SVRI = SVR · BSA.
+  //
+  // La version anterior dividia, asi que un paciente con SVR normal (1100) y
+  // BSA 1,9 daba SVRI ~580 en lugar de ~2090: por debajo del rango normal
+  // (1700-2400) y por tanto leido como vasoplejia. Todo paciente parecia
+  // distributivo, y el panel hemodinamico recomendaba vasopresor a quien no lo
+  // necesitaba.
+  const svri = clamp(600, 4000, (v.svr ?? 1100) * bsa);
 
   // ── SVV / PPV (Michard ICM 2003; Marik Crit Care 2017) ───────────────────
   const hypoFrac = clamp(0, 1, (5000 - pat.bloodVolume) / 5000);

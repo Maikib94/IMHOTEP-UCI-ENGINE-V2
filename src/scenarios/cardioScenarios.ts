@@ -379,4 +379,112 @@ export const cardioScenarios: ScenarioDefinition[] = [
     clinicalNotes: 'FA de novo con RVR: rate control 1ª prioridad (FC objetivo < 110 lpm). Decisión de fármaco según contexto: 1) FE preservada + estable → esmolol o diltiazem (Siu 2009: diltiazem > amio en control FC); 2) ICC sistólica → amiodarona o digoxina (BCC contraindicados); 3) Sepsis → amiodarona o digoxina (β-bloq evitar por hipotensión). Anticoagulación si FA > 48h o inestabilidad. Cardioversión eléctrica si hemodinámicamente inestable refractario.',
     references: ['Siu CW CCM 2009', 'Bosch NA Chest 2020', 'Kotecha D JAMA 2020'],
   },
+  // ── Shock cardiogenico puro ───────────────────────────────────────────────
+  // El motor ya modelaba el subtipo 'shock_cardiogenico' y ningun escenario lo
+  // usaba. Es ademas la contraparte exacta del shock septico para aprender a
+  // leer el PiCCO: mismo indice cardiaco bajo, precarga y agua pulmonar
+  // opuestas, y por tanto conducta contraria.
+  //
+  // Volemia alta a proposito (GEDI = 740 x bv/5000 -> ~830 mL/m², precarga
+  // elevada) y fuga capilar moderada sin SDRA: eso deja ELWI ~9,5 con PVPI
+  // ~2,75, es decir agua pulmonar alta con barrera integra. El panel lo lee
+  // como edema hidrostatico, que es lo correcto aqui y lo contrario de lo que
+  // debe salir en un SDRA.
+  {
+    id: 'cardio_shock_cardiogenico_refractario',
+    category: 'cardio',
+    name: 'Shock Cardiogénico Refractario',
+    description: 'Miocardiopatía dilatada descompensada. FE 15%. Shock cardiogénico sin respuesta a dobutamina. Congestión pulmonar y sistémica. PiCCO: índice cardíaco bajo con precarga elevada — el volumen empeora el cuadro.',
+    baseSeverity: 0.90,
+    tags: ['Shock cardiogénico', 'FE 15%', 'Congestión', 'PiCCO', 'Levosimendán'],
+    pathologyConfigs: [
+      { domain: 'cardio', subtype: 'shock_cardiogenico', baseSeverity: 0.90 },
+    ],
+    initialVitals: {
+      heartRate: 122,
+      systolicBP: 78,
+      diastolicBP: 54,
+      meanArterialPressure: 62,
+      cardiacOutput: 2.4,
+      strokeVolume: 20,
+      svr: 2250,
+      cvp: 20,
+      spo2: 88,
+      respiratoryRate: 32,
+      paO2: 56,
+      paCO2: 31,
+      pfRatio: 160,
+      ardsActive: false,
+      icp: 10,
+      gcs: 14,
+      pupilState: 'reactive',
+      lactate: 4.6,
+      pH: 7.29,
+      hco3: 18.5,
+      baseExcess: -7.0,
+      temperature: 36.2,
+      urineOutput: 0.15,
+      creatinine: 2.1,
+      weight: 78,
+    },
+    initialBloodVolumeMl: 5600,
+    isVentilatorConnected: true,
+    ventilatorPreset: { mode: 'VC-AC', fio2: 0.55, vt: 450, peep: 10, setRR: 20 },
+    initialModifiers: {
+      svrMultiplier: 1.45,
+      capillaryLeakRate: 25,
+      hyperdynamicFactor: 0.55,
+      lungShuntFraction: 0.32,
+      complianceMultiplier: 0.70,
+    },
+    clinicalNotes: 'Shock cardiogénico: mortalidad 40-50%. La precarga elevada con índice cardíaco bajo distingue este cuadro del shock hipovolémico, donde la precarga está baja — y la conducta es opuesta: aquí el volumen congestiona más. Inotrópico (dobutamina 2-20 mcg/kg/min o levosimendán 0,1 mcg/kg/min si betabloqueo previo) y noradrenalina si MAP < 65. El edema es hidrostático: bajar la presión de llenado mejora el agua pulmonar, a diferencia del SDRA. Asistencia mecánica (Impella, ECMO-VA) si refractario. IABCP no redujo mortalidad en IABP-SHOCK II.',
+    references: ['van Diepen S Circulation 2017', 'Thiele H IABP-SHOCK II NEJM 2012', 'Mebazaa A Intensive Care Med 2018'],
+  },
+
+  // ── SCASEST ───────────────────────────────────────────────────────────────
+  // Subtipo 'iam_nstemi' modelado y sin escenario. Es el sindrome coronario
+  // mas frecuente en UCI y el que mas depende de estratificar riesgo antes de
+  // llevar a hemodinamica, a diferencia del STEMI.
+  {
+    id: 'cardio_scasest_alto_riesgo',
+    category: 'cardio',
+    name: 'SCASEST de Alto Riesgo',
+    description: 'Síndrome coronario agudo sin elevación del ST. Troponina en ascenso, descenso del ST en V4-V6, angina recurrente en reposo. GRACE 155. Estrategia invasiva precoz indicada en las primeras 24 h.',
+    baseSeverity: 0.58,
+    tags: ['SCASEST', 'NSTEMI', 'GRACE', 'Antiagregación', 'Coronariografía'],
+    pathologyConfigs: [
+      { domain: 'cardio', subtype: 'iam_nstemi', baseSeverity: 0.58 },
+    ],
+    initialVitals: {
+      heartRate: 96,
+      systolicBP: 134,
+      diastolicBP: 82,
+      meanArterialPressure: 99,
+      cardiacOutput: 4.4,
+      strokeVolume: 46,
+      svr: 1680,
+      cvp: 9,
+      spo2: 95,
+      respiratoryRate: 20,
+      paO2: 78,
+      paCO2: 38,
+      pfRatio: 371,
+      ardsActive: false,
+      icp: 10,
+      gcs: 15,
+      pupilState: 'reactive',
+      lactate: 1.9,
+      pH: 7.38,
+      hco3: 23.0,
+      baseExcess: -1.5,
+      temperature: 36.8,
+      urineOutput: 0.8,
+      creatinine: 1.2,
+      weight: 82,
+    },
+    isVentilatorConnected: false,
+    recommendedRespSupport: 'nasal_cannula',
+    clinicalNotes: 'SCASEST de alto riesgo (GRACE > 140): estrategia invasiva en las primeras 24 h. Doble antiagregación y anticoagulación. A diferencia del STEMI no hay indicación de reperfusión inmediata, y ese es el punto de aprendizaje: la decisión la marca la estratificación del riesgo, no el reloj. Oxígeno solo si SpO2 < 90 — la hiperoxia aumenta el tamaño del infarto (DETO2X-AMI). Vigilar deterioro hacia Killip superior.',
+    references: ['Collet JP ESC NSTE-ACS 2020', 'Hofmann R DETO2X-AMI NEJM 2017', 'Fox KAA GRACE BMJ 2006'],
+  },
 ];
