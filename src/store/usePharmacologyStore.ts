@@ -53,6 +53,12 @@ export type DrugId =
   | 'desmopressin_iv'
   | 'argatroban_iv'
   | 'rasburicase_iv'
+  | 'heparin_iv'
+  | 'caplacizumab_iv'
+  | 'rituximab_iv'
+  | 'allopurinol_oral'
+  | 'filgrastim_sc'
+  | 'calcium_gluconate_iv'
   // Obstétrico
   | 'oxytocin_iv'
   | 'methylergonovine_im'
@@ -884,6 +890,58 @@ export const DRUG_CATALOG: Record<DrugId, DrugCatalogEntry> = {
     // Rasburicasa — TLS. Coiffier JCO 2008.
     id: 'rasburicase_iv', halfLifeMin: 1080, vdLkg: 0.11, inputUnit: 'mg/h',
     eliminationRoute: 'mixed', oralBioavailability: 0,
+    pd: { ...ZERO_PD },
+  },
+  heparin_iv: {
+    // Heparina no fraccionada en infusión. t½ dosis-dependiente 60-90 min;
+    // eliminación por el sistema reticuloendotelial a dosis habituales.
+    // Es el fármaco que el simulador necesitaba para poder enseñar la HIT:
+    // sin exposición no hay sensibilización, y sin ella la trombopenia del
+    // día 7 no es atribuible a nada. Cuker ASH 2018.
+    id: 'heparin_iv', halfLifeMin: 75, vdLkg: 0.06, inputUnit: 'U/h',
+    eliminationRoute: 'hepatic', oralBioavailability: 0,
+    pd: { ...ZERO_PD },  // el efecto vive en HematologyEngine
+  },
+  caplacizumab_iv: {
+    // Nanobody anti-factor von Willebrand — PTT. Bloquea la interacción del
+    // multímero con la GPIb plaquetaria, así que las plaquetas suben en 24-48 h
+    // SIN que el ADAMTS13 se recupere: controla el fenómeno, no la causa.
+    // Suspenderlo antes de que el inhibidor se apague recae. TITAN NEJM 2016;
+    // HERCULES NEJM 2019.
+    id: 'caplacizumab_iv', halfLifeMin: 1000, vdLkg: 0.09, inputUnit: 'mg/h',
+    eliminationRoute: 'mixed', oralBioavailability: 0,
+    pd: { ...ZERO_PD },
+  },
+  rituximab_iv: {
+    // Anti-CD20 — depleción de linfocitos B. Apaga la producción del
+    // autoanticuerpo en la fuente, pero tarda días: no sustituye al recambio
+    // plasmático en la fase aguda. Scully Blood 2011.
+    id: 'rituximab_iv', halfLifeMin: 22 * 24 * 60, vdLkg: 0.05, inputUnit: 'mg/h',
+    eliminationRoute: 'mixed', oralBioavailability: 0,
+    pd: { ...ZERO_PD },
+  },
+  allopurinol_oral: {
+    // Inhibidor de la xantina oxidasa. Frena la producción de urato NUEVO y
+    // no toca el que ya circula — toda la diferencia con la rasburicasa, que
+    // es una uricasa y degrada el urato existente. Coiffier JCO 2008.
+    id: 'allopurinol_oral', halfLifeMin: 1200, vdLkg: 0.6, inputUnit: 'mg/h',
+    eliminationRoute: 'renal', oralBioavailability: 0.80, absorptionRateHr: 1.2,
+    pd: { ...ZERO_PD },
+  },
+  filgrastim_sc: {
+    // G-CSF — acorta la duración de la neutropenia. No es tratamiento de la
+    // infección establecida. Freifeld CID 2011 (IDSA).
+    id: 'filgrastim_sc', halfLifeMin: 210, vdLkg: 0.15, inputUnit: 'mcg/kg/h',
+    eliminationRoute: 'renal', oralBioavailability: 0, absorptionRateHr: 0.6,
+    pd: { ...ZERO_PD },
+  },
+  calcium_gluconate_iv: {
+    // Gluconato de calcio — estabiliza el potencial de membrana del miocito en
+    // la hiperpotasemia; no baja el potasio. En la lisis tumoral con fósforo
+    // alto, darlo por una hipocalcemia asintomática eleva el producto
+    // calcio-fósforo y precipita en el túbulo. Coiffier JCO 2008.
+    id: 'calcium_gluconate_iv', halfLifeMin: 60, vdLkg: 0.3, inputUnit: 'g/h',
+    eliminationRoute: 'renal', oralBioavailability: 0,
     pd: { ...ZERO_PD },
   },
   // ── OBSTÉTRICO ───────────────────────────────────────────────────────────────

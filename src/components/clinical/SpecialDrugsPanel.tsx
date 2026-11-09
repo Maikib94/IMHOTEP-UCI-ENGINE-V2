@@ -121,6 +121,11 @@ function HematoSection({ active }: SectionProps) {
   const [ccpDose,  setCcpDose]  = useState(25);   // U/kg equiv
   const [ddavpDose,setDdavpDose]= useState(0.3);  // mcg/kg equiv
   const [rasDose,  setRasDose]  = useState(7);    // mg (0.2 mg/kg × 35 kg ref)
+  const [allopDose,setAllopDose]= useState(300);  // mg
+  const [caplaDose,setCaplaDose]= useState(10);   // mg
+  const [rtxDose,  setRtxDose]  = useState(700);  // mg (375 mg/m²)
+  const [caDose,   setCaDose]   = useState(1);    // g
+  const [gcsfDose, setGcsfDose] = useState(5);    // mcg/kg
 
   return (
     <div className="space-y-1">
@@ -152,8 +157,35 @@ function HematoSection({ active }: SectionProps) {
           onDoseChange={setRasDose}
           onBolus={() => adminBolus('rasburicase_iv', rasDose)}
         />
+        <BolusRow label="Alopurinol" drug="allopurinol_oral" dose={allopDose}
+          unit="mg" step={100} max={600} colorTheme="red"
+          onDoseChange={setAllopDose}
+          onBolus={() => adminBolus('allopurinol_oral', allopDose)}
+        />
+        <InfusionControl label="Heparina (HNF)" drug="heparin_iv" unit="U/h" step={50} colorTheme="red" />
+        <BolusRow label="Caplacizumab" drug="caplacizumab_iv" dose={caplaDose}
+          unit="mg" step={1} max={20} colorTheme="red"
+          onDoseChange={setCaplaDose}
+          onBolus={() => adminBolus('caplacizumab_iv', caplaDose)}
+        />
+        <BolusRow label="Rituximab" drug="rituximab_iv" dose={rtxDose}
+          unit="mg" step={50} max={1000} colorTheme="red"
+          onDoseChange={setRtxDose}
+          onBolus={() => adminBolus('rituximab_iv', rtxDose)}
+        />
+        <BolusRow label="Gluconato de Ca" drug="calcium_gluconate_iv" dose={caDose}
+          unit="g" step={0.5} max={3} colorTheme="red"
+          onDoseChange={setCaDose}
+          onBolus={() => adminBolus('calcium_gluconate_iv', caDose)}
+        />
+        <BolusRow label="Filgrastim (G-CSF)" drug="filgrastim_sc" dose={gcsfDose}
+          unit="mcg/kg" step={1} max={10} colorTheme="red"
+          onDoseChange={setGcsfDose}
+          onBolus={() => adminBolus('filgrastim_sc', gcsfDose)}
+        />
         <div style={{ fontSize: '0.34rem', color: '#334155', marginTop: 4 }}>
-          CRASH-2 2010 (TXA) · Sarode Circulation 2013 (CCP) · Mannucci Blood 1997 (DDAVP)
+          CRASH-2 2010 (TXA) · Sarode Circulation 2013 (CCP) · Mannucci Blood 1997 (DDAVP) ·
+          Peyvandi NEJM 2016 (caplacizumab) · Coiffier JCO 2008 (rasburicasa)
         </div>
       </div>
     </div>
