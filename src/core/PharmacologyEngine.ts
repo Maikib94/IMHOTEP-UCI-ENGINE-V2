@@ -114,6 +114,12 @@ export const DRUG_MAX_DOSES: Record<DrugId, number> = {
   desmopressin_iv:    0.4,  // mcg/kg
   argatroban_iv:      15,   // mcg/kg/min
   rasburicase_iv:     0.5,  // mg/kg/día
+  heparin_iv:         1800, // U/h (infusión terapéutica plena ~18 U/kg/h)
+  caplacizumab_iv:    10,   // mg/día
+  rituximab_iv:       700,  // mg (375 mg/m² en un adulto medio)
+  allopurinol_oral:   300,  // mg/día
+  filgrastim_sc:      5,    // mcg/kg/día
+  calcium_gluconate_iv: 2,  // g
   // Obstétrico
   oxytocin_iv:        40,   // U/h
   methylergonovine_im: 1,   // mg total
