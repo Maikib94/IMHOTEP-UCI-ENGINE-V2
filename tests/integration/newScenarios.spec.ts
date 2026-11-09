@@ -142,6 +142,10 @@ describe('Cobertura de los subtipos que el motor modela', () => {
       'tce_aislado', 'tce_torax', 'tce_abdomen', 'tce_torax_abdomen',
       'fractura_pelvis_mayor',
       'fuego', 'electrico', 'explosion', 'quimico',
+      'tormenta_tiroidea', 'coma_mixedematoso', 'cetoacidosis',
+      'hiperosmolar', 'crisis_suprarrenal',
+      'ptt', 'cid', 'lisis_tumoral', 'hit',
+      'neutropenia_febril', 'sobreanticoagulacion',
     ];
     const huerfanos = modelados.filter(m => !usados.has(m));
     expect(huerfanos).toEqual([]);
