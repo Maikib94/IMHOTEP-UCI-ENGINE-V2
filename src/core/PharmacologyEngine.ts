@@ -353,7 +353,23 @@ export class PharmacologyEngine {
         this.cpRatio[dId] += (ke * targetRatio - ke * this.cpRatio[dId]) * dtMin;
       }
 
-      if ((this.cpRatio[dId] ?? 0) < 0.0001) this.cpRatio[dId] = 0;
+      // ── Limpieza de polvo numerico — SOLO si nada esta cargando el farmaco ──
+      //
+      //   Este umbral existe para borrar el residuo de un farmaco ya
+      //   suspendido, pero se aplicaba SIEMPRE, tambien mientras la infusion
+      //   corria. El incremento por tick de una infusion IV es
+      //   ke x targetRatio x dtMin: para la noradrenalina (t½ ~2 min, ke ~0.347
+      //   /min) a dt=1/240 eso son 2.4e-5, MENOR que el umbral de 1e-4, asi que
+      //   la linea lo borraba en cada tick y la concentracion plasmatica no
+      //   despegaba nunca de cero. A dt=0.25 el incremento es 1.4e-3 y si
+      //   sobrevivia.
+      //
+      //   Clinicamente: a velocidad x1 el vasopresor dejaba de hacer efecto en
+      //   silencio y el paciente moria de un shock que SI estaba tratado,
+      //   mientras que a x60 el mismo caso sobrevivia. Es el grueso de la
+      //   no-invarianza de dt que documenta tests/diagnostics/dtInvariance.spec.ts.
+      const cargando = isOral ? (this.depotConc[dId] ?? 0) > 0 : currentRate > 0;
+      if (!cargando && (this.cpRatio[dId] ?? 0) < 0.0001) this.cpRatio[dId] = 0;
     }
 
     // Publicar concentraciones plasmáticas (para visualización/debug)

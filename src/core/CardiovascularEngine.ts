@@ -151,6 +151,24 @@ export class CardiovascularEngine {
   private noiseTimer: number = 0;
   private pendingNoise: number = 0;
 
+  // ─── Frecuencia cardiaca fisiologica, SIN el ruido de medicion ───────────
+  //
+  //   El ruido de ±1 lpm es una perturbacion del APARATO, no del paciente, y
+  //   por tanto no puede realimentar al integrador. Antes se sumaba al valor
+  //   que se guardaba en vitals, y el tick siguiente lo leia de vuelta como
+  //   estado y volvia a sumarlo: una fuente constante que converge a
+  //   ruido/k, donde k = 1 - exp(-dt/TAU). Con dt=1/240 eso son +2340 lpm de
+  //   desplazamiento teorico (la FC se clavaba en el tope de 220) y con
+  //   dt=0.25 solo +39 — el mismo paciente con distinta velocidad de
+  //   reproduccion. De ahi salia la no-invarianza de dt documentada en
+  //   tests/diagnostics/dtInvariance.spec.ts: la PAM se calcula del gasto, el
+  //   gasto de la frecuencia, y el desenlace de mortalidad cambiaba entre x1
+  //   y x60. Ahora la deriva vive aqui, limpia, y el ruido se añade solo al
+  //   publicar.
+  private hrClean: number = NaN;
+  /** Ultimo valor publicado — detecta escrituras de OTROS motores. */
+  private lastPublishedHR: number = NaN;
+
   private treatmentRecovery: number = 0;
   private recoveryElapsed: number = 0;
 
@@ -171,6 +189,8 @@ export class CardiovascularEngine {
   public reset(): void {
     this.noiseTimer = 0;
     this.pendingNoise = 0;
+    this.hrClean = NaN;
+    this.lastPublishedHR = NaN;
     this.treatmentRecovery = 0;
     this.recoveryElapsed = 0;
     this.lastDt = -1;
@@ -421,7 +441,16 @@ export class CardiovascularEngine {
       this.lastDt = dt;
       this.hrDriftFactorCached = 1 - Math.exp(-dt / TAU_HR_S);
     }
-    let newHR = v.heartRate + (targetHRAdjusted - v.heartRate) * this.hrDriftFactorCached;
+    //   La deriva opera sobre hrClean, la frecuencia del PACIENTE. Si otro
+    //   motor (endocrino, por ejemplo) o el carguero de escenarios escribio
+    //   la frecuencia desde fuera, se adopta ese valor como nueva base: el
+    //   cotejo con lastPublishedHR distingue una escritura ajena de la
+    //   nuestra del tick anterior.
+    if (!isFinite(this.hrClean) || v.heartRate !== this.lastPublishedHR) {
+      this.hrClean = v.heartRate;
+    }
+    this.hrClean = Math.max(HR_MIN, Math.min(HR_MAX,
+      this.hrClean + (targetHRAdjusted - this.hrClean) * this.hrDriftFactorCached));
 
     // ─── RUIDO DISCRETO a 1 Hz (fase preservada) ───────────────────────────
     //   Restar NOISE_INT en vez de asignar 0: conserva el excedente y
@@ -433,7 +462,10 @@ export class CardiovascularEngine {
       this.noiseTimer -= NOISE_INT;
       this.pendingNoise = rand('cardioNoise') * 2 - 1;
     }
-    newHR = Math.max(HR_MIN, Math.min(HR_MAX, newHR + this.pendingNoise));
+    //   El ruido se añade AL PUBLICAR, nunca al estado: es lo que lee el
+    //   monitor, no lo que el corazon hace.
+    const newHR = Math.max(HR_MIN, Math.min(HR_MAX, this.hrClean + this.pendingNoise));
+    this.lastPublishedHR = newHR;
 
     // ─── 7. RESISTENCIA VASCULAR, GASTO CARDÍACO Y PAM ─────────────────────
     //
