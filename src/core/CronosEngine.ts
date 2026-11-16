@@ -21,6 +21,7 @@ import { LabEngine } from './LabEngine';
 import { PrognosisEngine } from './PrognosisEngine';
 import { GlycemicEngine } from './GlycemicEngine';
 import { EndocrineEngine } from './EndocrineEngine';
+import { HematologyEngine } from './HematologyEngine';
 import { useMonitoringStore } from '../store/useMonitoringStore';
 import { usePharmacologyStore } from '../store/usePharmacologyStore';
 import { CrosstalkEngine }     from './CrosstalkEngine';
@@ -233,6 +234,11 @@ export class CronosEngine {
     }
     AcidBaseEngine.getInstance().update(dt);
     NeuroEngine.getInstance().update(dt);
+    // Antes del laboratorio, porque el laboratorio informa lo que este motor
+    // acaba de escribir; y despues de renal y neuro, porque sobre el potasio,
+    // la creatinina y el Glasgow aporta un incremento sobre lo que aquellos
+    // ya calcularon en este mismo tick.
+    HematologyEngine.getInstance().update(dt);
     LabEngine.getInstance().update();
     PrognosisEngine.getInstance().update(dt);
     GlycemicEngine.getInstance().update(dt);

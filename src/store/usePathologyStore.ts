@@ -31,7 +31,8 @@ export type ArdsTrigger =
 export type PathologyDomain =
   | 'sepsis' | 'ards' | 'hemorrhagicShock'
   | 'neuroCritical' | 'polytrauma' | 'burn'
-  | 'asthma' | 'copd' | 'cardio' | 'pneumonia' | 'endocrine';
+  | 'asthma' | 'copd' | 'cardio' | 'pneumonia' | 'endocrine'
+  | 'hematologic';
 
 /** Categoría clínica del caso — gate de visibilidad PIC + sidebar Fase 6.
  *  Robba C et al., Lancet Neurol 2021 (SYNAPSE-ICU): monitoreo PIC selectivo. */
@@ -134,6 +135,50 @@ export interface EndocrineState extends GenericPathologyState {
   thyroidLoad: number;
 }
 
+/** Crisis hematologicas agudas.
+ *
+ *  La PTT y la CID comparten pantalla —plaquetas en el suelo, hemolisis,
+ *  fallo organico— y exigen conductas OPUESTAS: en la PTT se recambia plasma
+ *  y transfundir plaquetas esta formalmente contraindicado; en la CID se
+ *  controla el foco y los productos solo se dan si hay sangrado. Lo que las
+ *  separa es el fibrinogeno y el INR, normales en la microangiopatia y
+ *  consumidos en la coagulopatia. Por eso se modelan en el mismo dominio:
+ *  el diagnostico diferencial ES la enseñanza.
+ *
+ *  La HIT es el tercer vertice: trombopenia que TROMBOSA en vez de sangrar,
+ *  cuyo tratamiento es retirar el farmaco, no reponer plaquetas. */
+export type HematologicSubtype =
+  | 'ptt'                  // purpura trombocitopenica trombotica (deficit de ADAMTS13)
+  | 'cid'                  // coagulacion intravascular diseminada (ISTH)
+  | 'lisis_tumoral'        // sindrome de lisis tumoral
+  | 'hit'                  // trombocitopenia inducida por heparina tipo II
+  | 'neutropenia_febril'   // neutropenia febril post-quimioterapia
+  | 'sobreanticoagulacion';// INR critico con sangrado (antagonistas de vitamina K)
+
+export interface HematologicState extends GenericPathologyState {
+  subtype: HematologicSubtype | null;
+  /** Actividad de ADAMTS13, %. Normal > 50; < 10 define la PTT adquirida.
+   *  Sube con cada recambio plasmatico: es lo que la plasmaferesis repone. */
+  adamts13Pct: number;
+  /** Titulo del autoanticuerpo inhibidor, 0-1. La plasmaferesis lo arrastra;
+   *  los corticoides y el rituximab lo apagan en la fuente. Mientras siga
+   *  alto, el ADAMTS13 repuesto se vuelve a consumir. */
+  inhibitorTiter: number;
+  /** Carga de microtrombosis, 0-1. Es la via por la que la PTT y la HIT
+   *  dañan organos —y por la que transfundir plaquetas en una PTT empeora al
+   *  paciente en vez de mejorarlo. */
+  microthrombosis: number;
+  /** Fraccion de la hemostasia consumida por la CID, 0-1. */
+  consumption: number;
+  /** Horas acumuladas de exposicion a heparina. La HIT tipo II necesita
+   *  sensibilizacion: el nadir plaquetario llega al dia 5-10, no antes. */
+  heparinExposureH: number;
+  /** Sesiones de recambio plasmatico completadas. */
+  plasmaExchangeSessions: number;
+  /** Recambio plasmatico en curso. */
+  plasmaExchangeActive: boolean;
+}
+
 export interface AsthmaState  extends GenericPathologyState { subtype: AsthmaSubtype  | null; }
 export interface CopdState    extends GenericPathologyState { subtype: CopdSubtype    | null; }
 export interface CardioState  extends GenericPathologyState { subtype: CardioSubtype  | null; }
@@ -191,6 +236,11 @@ const INITIAL_NEURO: NeuroCriticalState       = { isActive: false, severity: 0, 
 const INITIAL_POLYTRAUMA: PolytraumaState     = { isActive: false, severity: 0, subtype: null, tceScore: 0, thoracicScore: 0, abdominalScore: 0 };
 const INITIAL_BURN: BurnState                 = { isActive: false, severity: 0, subtype: null, tbsaPercent: 0, airwayBurn: false, parklandDeliveredMl: 0 };
 const INITIAL_ENDOCRINE: EndocrineState       = { isActive: false, severity: 0, subtype: null, thyroidLoad: 0 };
+const INITIAL_HEMATOLOGIC: HematologicState   = {
+  isActive: false, severity: 0, subtype: null,
+  adamts13Pct: 100, inhibitorTiter: 0, microthrombosis: 0, consumption: 0,
+  heparinExposureH: 0, plasmaExchangeSessions: 0, plasmaExchangeActive: false,
+};
 const INITIAL_ASTHMA: AsthmaState             = { isActive: false, severity: 0, subtype: null };
 const INITIAL_COPD: CopdState                 = { isActive: false, severity: 0, subtype: null };
 const INITIAL_CARDIO: CardioState             = { isActive: false, severity: 0, subtype: null };
@@ -208,6 +258,7 @@ interface PathologyState {
   polytrauma: PolytraumaState;
   burn: BurnState;
   endocrine: EndocrineState;
+  hematologic: HematologicState;
   asthma: AsthmaState;
   copd: CopdState;
   cardio: CardioState;
@@ -249,6 +300,10 @@ interface PathologyState {
   deactivatePathology: (domain: PathologyDomain) => void;
   /** Ajusta la carga hormonal tiroidea (EndocrineEngine). */
   setThyroidLoad: (load: number) => void;
+  /** Fusiona estado hematologico (HematologyEngine cada tick). */
+  patchHematologic: (p: Partial<HematologicState>) => void;
+  /** Conecta o desconecta el recambio plasmatico (plasmaferesis). */
+  setPlasmaExchange: (on: boolean) => void;
   setBurnTbsa: (pct: number) => void;
   setBurnAirway: (v: boolean) => void;
   addParklandDelivered: (ml: number) => void;
@@ -275,6 +330,7 @@ export const usePathologyStore = create<PathologyState>((set) => ({
   polytrauma: { ...INITIAL_POLYTRAUMA },
   burn: { ...INITIAL_BURN },
   endocrine: { ...INITIAL_ENDOCRINE },
+  hematologic: { ...INITIAL_HEMATOLOGIC },
   asthma: { ...INITIAL_ASTHMA },
   copd: { ...INITIAL_COPD },
   cardio: { ...INITIAL_CARDIO },
@@ -443,6 +499,24 @@ export const usePathologyStore = create<PathologyState>((set) => ({
           // tratamiento tiene que bajar, y lo unico que lo baja.
           thyroidLoad: (subtype === 'tormenta_tiroidea') ? sev : 0,
         } };
+        case 'hematologic':   return { hematologic: {
+          ...INITIAL_HEMATOLOGIC, isActive: true, severity: sev,
+          subtype: subtype as HematologicSubtype,
+          // La PTT adquirida se define por ADAMTS13 < 10% con un inhibidor
+          // circulante que lo consume. Reponer sin apagar el inhibidor es
+          // justamente por lo que el recambio hay que repetirlo a diario.
+          adamts13Pct:    subtype === 'ptt' ? Math.max(2, 12 * (1 - sev)) : 100,
+          inhibitorTiter: subtype === 'ptt' ? sev : 0,
+          // La CID arranca con la hemostasia ya consumida: el paciente no
+          // llega al inicio del proceso, llega con el score ISTH hecho.
+          consumption:    subtype === 'cid' ? sev : 0,
+          // La HIT tipo II necesita sensibilizacion previa: el caso empieza en
+          // el dia 7 de heparina —centro de la ventana del dia 5 al 10— que es
+          // cuando el nadir plaquetario ya esta hecho. Empezar el dia 5, en el
+          // borde, dejaba al paciente a media sensibilizacion y con 180.000
+          // plaquetas: un caso de HIT sin HIT.
+          heparinExposureH: subtype === 'hit' ? 168 : 0,
+        } };
         default:              return {};
       }
     });
@@ -465,6 +539,7 @@ export const usePathologyStore = create<PathologyState>((set) => ({
         case 'cardio':        return { cardio: { ...INITIAL_CARDIO } };
         case 'pneumonia':     return { pneumonia: { ...INITIAL_PNEUMONIA } };
         case 'endocrine':     return { endocrine: { ...INITIAL_ENDOCRINE } };
+        case 'hematologic':   return { hematologic: { ...INITIAL_HEMATOLOGIC } };
         default:              return {};
       }
     });
@@ -472,6 +547,12 @@ export const usePathologyStore = create<PathologyState>((set) => ({
 
   setThyroidLoad: (load) => set(s => ({
     endocrine: { ...s.endocrine, thyroidLoad: Math.max(0, Math.min(1, load)) },
+  })),
+
+  patchHematologic: (p) => set(s => ({ hematologic: { ...s.hematologic, ...p } })),
+
+  setPlasmaExchange: (on) => set(s => ({
+    hematologic: { ...s.hematologic, plasmaExchangeActive: on },
   })),
 
   // ── Burn extras ───────────────────────────────────────────────────────────
@@ -507,6 +588,11 @@ export const usePathologyStore = create<PathologyState>((set) => ({
       neuroCritical: { ...INITIAL_NEURO },
       polytrauma: { ...INITIAL_POLYTRAUMA },
       burn: { ...INITIAL_BURN },
+      // El dominio endocrino faltaba en este reset: una tormenta tiroidea
+      // sobrevivia al reinicio completo de patologias y seguia empujando
+      // frecuencia y temperatura en el caso siguiente.
+      endocrine: { ...INITIAL_ENDOCRINE },
+      hematologic: { ...INITIAL_HEMATOLOGIC },
       asthma: { ...INITIAL_ASTHMA },
       copd: { ...INITIAL_COPD },
       cardio: { ...INITIAL_CARDIO },

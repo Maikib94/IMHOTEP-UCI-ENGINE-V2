@@ -5,6 +5,7 @@
 import React, { memo } from 'react';
 import { usePatientStore }  from '../store/usePatientStore';
 import { usePathologyStore } from '../store/usePathologyStore';
+import { useCRRTStore }      from '../store/useCRRTStore';
 import { useLanguage }       from '../i18n/LanguageContext';
 import { triggerNIBPNow }    from '../hooks/useNIBPCycle';
 import type {
@@ -96,6 +97,10 @@ const ProceduresPanel = memo(function ProceduresPanel() {
   const setInterval  = usePatientStore(s => s.setNIBPInterval);
   const caseCategory = usePathologyStore(s => s.caseCategory);
   const setCaseCat   = usePathologyStore(s => s.setCaseCategory);
+  const pexActive    = usePathologyStore(s => s.hematologic.plasmaExchangeActive);
+  const setPlasmaExchange = usePathologyStore(s => s.setPlasmaExchange);
+  const crrtActive   = useCRRTStore(s => s.active);
+  const setCrrtActive= useCRRTStore(s => s.setActive);
   const { t }        = useLanguage();
 
   return (
@@ -181,11 +186,30 @@ const ProceduresPanel = memo(function ProceduresPanel() {
         onToggle={() => setProcedure('ecmo', !p.ecmo)}
       />
 
-      {/* CRRT (placeholder Fase 3) */}
+      {/* CRRT / TSR — conectada al store que la modela de verdad.
+          Este toggle movía `procedures.crrt`, un booleano que NINGÚN motor
+          leía: el residente activaba la depuración aquí y no pasaba nada,
+          porque el interruptor real vivía en otro cajón de la interfaz
+          (ECMOCRRTPanel → useCRRTStore). Ahora mueve los dos a la vez. */}
       <ToggleRow
         label="CRRT / TSR"
-        active={p.crrt}
-        onToggle={() => setProcedure('crrt', !p.crrt)}
+        active={crrtActive}
+        onToggle={() => {
+          const next = !crrtActive;
+          setProcedure('crrt', next);
+          setCrrtActive(next);
+        }}
+      />
+
+      {/* Recambio plasmático — emergencia de la microangiopatía trombótica.
+          La PTT es la urgencia hematológica que se mide en horas, y hasta
+          ahora no había forma de iniciar el tratamiento que cambia su
+          mortalidad: el escenario lo pedía en las notas clínicas y la
+          interfaz no lo ofrecía. */}
+      <ToggleRow
+        label="Plasmaféresis / Recambio plasmático"
+        active={pexActive}
+        onToggle={() => setPlasmaExchange(!pexActive)}
       />
 
       {/* NIBP — solo si NO hay línea arterial */}

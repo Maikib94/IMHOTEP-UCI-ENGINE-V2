@@ -28,10 +28,12 @@ export type RngStream =
   | 'microbiology'  // MicrobiologyEngine — seleccion de pathogeno, cultivos
   | 'prognosis'     // PrognosisEngine — probabilidad de muerte/recuperacion
   | 'ventAsync'     // VentilatorAsynchrony — eventos no mecanisticos (auto-trigger)
+  | 'hematology'    // HematologyEngine — fenotipo leucocitario del episodio septico
   | 'misc';         // todo lo demas (InfectoEngine, IDs no criticos, etc.)
 
 const STREAMS: readonly RngStream[] = [
-  'cardioNoise', 'glucometer', 'labAssay', 'microbiology', 'prognosis', 'ventAsync', 'misc',
+  'cardioNoise', 'glucometer', 'labAssay', 'microbiology', 'prognosis', 'ventAsync',
+  'hematology', 'misc',
 ];
 
 /** mulberry32 — PRNG de 32 bits, rapido, sin dependencia externa.

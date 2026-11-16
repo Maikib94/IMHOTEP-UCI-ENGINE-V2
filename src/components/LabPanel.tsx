@@ -232,6 +232,7 @@ const LAB_MENU = [
   { type: 'glucose_r',  label: 'Glucemia POC', category: 'gases',    color: '#34d399' },
   { type: 'cbc',        label: 'Hemograma',    category: 'hema',     color: '#a78bfa' },
   { type: 'coag',       label: 'Coagulacion',  category: 'hema',     color: '#a78bfa' },
+  { type: 'hemolysis',  label: 'Hemolisis',    category: 'hema',     color: '#a78bfa' },
   { type: 'bmp',        label: 'BMP',          category: 'quimica',  color: '#38bdf8' },
   { type: 'cmp',        label: 'CMP',          category: 'quimica',  color: '#38bdf8' },
   { type: 'renal',      label: 'Renal',        category: 'quimica',  color: '#38bdf8' },
@@ -239,6 +240,7 @@ const LAB_MENU = [
   { type: 'lft',        label: 'Hepatograma',  category: 'quimica',  color: '#38bdf8' },
   { type: 'pancreatic', label: 'Pancreatico',  category: 'quimica',  color: '#38bdf8' },
   { type: 'magphos',    label: 'Mg/P/Ca',      category: 'quimica',  color: '#38bdf8' },
+  { type: 'tls',        label: 'Lisis tumoral',category: 'quimica',  color: '#38bdf8' },
   { type: 'albumin',    label: 'Albumina',     category: 'quimica',  color: '#38bdf8' },
   { type: 'tni',        label: 'TnI us',       category: 'especial', color: '#fbbf24' },
   { type: 'bnp',        label: 'NT-proBNP',    category: 'especial', color: '#fbbf24' },
@@ -246,6 +248,7 @@ const LAB_MENU = [
   { type: 'pct',        label: 'PCT',          category: 'especial', color: '#fbbf24' },
   { type: 'crp',        label: 'PCR',          category: 'especial', color: '#fbbf24' },
   { type: 'cortisol',   label: 'Cortisol',     category: 'especial', color: '#fbbf24' },
+  { type: 'adamts13',   label: 'ADAMTS13',     category: 'especial', color: '#fbbf24' },
 ];
 
 const CATEGORIES = [

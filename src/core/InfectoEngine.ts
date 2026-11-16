@@ -212,7 +212,7 @@ export class InfectoEngine {
         );
 
         if (this.hoursUncoveredElapsed >= earlyThreshold + 3600) {
-          this._triggerSepticProgression(path, sepsis, isXdr);
+          this._triggerSepticProgression(path, sepsis, isXdr, dt);
         }
       }
     }
@@ -319,21 +319,36 @@ export class InfectoEngine {
     return HIGH_FREQUENCY_UCI_PATHOGENS[0].id;
   }
 
+  /**
+   * Progresion septica por cobertura antibiotica fallida.
+   *
+   * Se llama UNA VEZ POR TICK, de modo que sus magnitudes son TASAS POR
+   * SEGUNDO SIMULADO y hay que escalarlas por dt. Antes eran cantidades fijas
+   * por llamada, heredadas de la convencion antigua de un tick por segundo:
+   * a dt=1/240 se aplicaban 240 veces por segundo simulado y a dt=0.25 solo
+   * cuatro, con lo que la vasoplejia corria 60 veces mas rapido a velocidad
+   * x1 que a x60. Las resistencias tocaban su suelo de 400 en medio minuto a
+   * x1 y apenas se movian a x60 — el mismo paciente moria o sobrevivia segun
+   * la velocidad de reproduccion que hubiera elegido el usuario. Todo lo que
+   * rodea a esta llamada ya estaba escalado por dt; solo faltaba esto.
+   * Ver tests/diagnostics/dtInvariance.spec.ts.
+   */
   private _triggerSepticProgression(
     path: ReturnType<typeof usePathologyStore.getState>,
     sepsis: { severity: number },
     isXdr: boolean,
+    dt: number,
   ): void {
     const newSeverity = Math.min(
       SEPSIS_SEVERITY_CAP,
-      sepsis.severity + (isXdr ? 0.00004 : 0.000015),
+      sepsis.severity + (isXdr ? 0.00004 : 0.000015) * dt,
     );
     path.setSepsisSeverity(newSeverity);
 
     // Reducir SVR (vasoplegia séptica)
     const pat = usePatientStore.getState();
     const currentSvr = pat.vitals.baseSvr ?? 1200;
-    const newSvr = Math.max(400, currentSvr - (isXdr ? 3.0 : 1.2));
+    const newSvr = Math.max(400, currentSvr - (isXdr ? 3.0 : 1.2) * dt);
     pat.updateVitals({ baseSvr: newSvr });
   }
 

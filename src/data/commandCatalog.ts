@@ -88,6 +88,20 @@ const INFUSIONS: InfusionSpec[] = [
     keywords: 'hiperglucemia cetoacidosis cad glucemia' },
   { drug: 'argatroban_iv', label: 'Argatroban', unit: 'mcg/kg/min', group: 'Farmacos especiales',
     keywords: 'anticoagulante trombopenia heparina hit' },
+  // Hematologico — el argatroban ya estaba; estos seis son los que faltaban
+  // para poder tratar las crisis del dominio desde la paleta.
+  { drug: 'heparin_iv', label: 'Heparina no fraccionada', unit: 'U/h', group: 'Farmacos especiales',
+    keywords: 'anticoagulante hnf infusion ttpa trombosis tep' },
+  { drug: 'caplacizumab_iv', label: 'Caplacizumab', unit: 'mg/h', group: 'Farmacos especiales',
+    keywords: 'ptt purpura trombotica microangiopatia von willebrand plaquetas' },
+  { drug: 'rituximab_iv', label: 'Rituximab', unit: 'mg/h', group: 'Farmacos especiales',
+    keywords: 'anti cd20 ptt inhibidor autoanticuerpo adamts13' },
+  { drug: 'allopurinol_oral', label: 'Alopurinol', unit: 'mg/h', group: 'Farmacos especiales',
+    keywords: 'urato acido urico lisis tumoral xantina oxidasa profilaxis' },
+  { drug: 'filgrastim_sc', label: 'Filgrastim (G-CSF)', unit: 'mcg/kg/h', group: 'Farmacos especiales',
+    keywords: 'neutropenia febril gcsf factor estimulante colonias' },
+  { drug: 'calcium_gluconate_iv', label: 'Gluconato de calcio', unit: 'g/h', group: 'Farmacos especiales',
+    keywords: 'hiperpotasemia potasio membrana calcio hipocalcemia' },
 ];
 
 export interface CommandDeps {

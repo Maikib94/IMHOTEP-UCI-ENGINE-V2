@@ -175,7 +175,11 @@ export class RenalEngine {
     upd({ kPlasma: kNow });
 
     // ─── 5. Suavizado tubular τ = 30 s sim (Bellomo Lancet 2012) ─────────────
-    const factor = Math.min(1, dt / TAU_UO_S);
+    // Forma exponencial exacta, no la aproximacion lineal dt/tau: esta ultima
+    // depende del paso (con dt=0.25 se desvia un 0.4% por paso y se compone,
+    // con dt=1/240 es practicamente exacta), que es justo lo que no puede
+    // ocurrir. Mismo patron que CardiovascularEngine.hrDriftFactorCached.
+    const factor = 1 - Math.exp(-dt / TAU_UO_S);
     const newUO  = clamp(UO_MIN, UO_MAX,
       (v.urineOutput ?? UO_NORMAL) + (uoTarget - (v.urineOutput ?? UO_NORMAL)) * factor
     );

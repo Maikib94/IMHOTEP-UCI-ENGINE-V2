@@ -150,6 +150,30 @@ export const CLINICAL_DOSES: Partial<Record<DrugId, DoseStep[]>> = {
     { label: 'Media', value: 1.0, hint: 'Trombopenia inducida por heparina — titular por TTPa' },
     { label: 'Alta',  value: 2.0, hint: 'Techo' },
   ],
+
+  // ── Hematologico ────────────────────────────────────────────────────────
+  heparin_iv: [          // U/h
+    { label: 'Profilaxis', value: 350,  hint: 'Equivalente a 5000 U/8h — no anticoagula' },
+    { label: 'Media',      value: 1250, hint: 'Terapeutica ~18 U/kg/h — titular por TTPa' },
+    { label: 'Alta',       value: 1800, hint: 'Techo; vigilar plaquetas desde el dia 4 (HIT)' },
+  ],
+  caplacizumab_iv: [     // mg/h equiv
+    { label: 'Carga',      value: 10, hint: '10 mg IV antes del primer recambio plasmatico' },
+    { label: 'Diaria',     value: 10, hint: '10 mg SC tras cada recambio; NO recupera el ADAMTS13' },
+  ],
+  rituximab_iv: [        // mg/h equiv
+    { label: 'Semanal',    value: 700, hint: '375 mg/m² semanal x 4 — apaga el inhibidor, tarda dias' },
+  ],
+  allopurinol_oral: [    // mg/h equiv
+    { label: 'Profilaxis', value: 300, hint: 'PREVIENE urato nuevo; NO baja el que ya circula' },
+  ],
+  filgrastim_sc: [       // mcg/kg/h equiv
+    { label: 'Estandar',   value: 5, hint: '5 mcg/kg/dia — acorta la neutropenia, no trata la infeccion' },
+  ],
+  calcium_gluconate_iv: [// g
+    { label: 'Membrana',   value: 1, hint: '1 g en hiperpotasemia con cambios en el ECG; no baja el K' },
+    { label: 'Alta',       value: 2, hint: 'Repetir si persisten los cambios' },
+  ],
 };
 
 /** Escalones de dosis de un farmaco, o vacio si no tiene referencia definida. */

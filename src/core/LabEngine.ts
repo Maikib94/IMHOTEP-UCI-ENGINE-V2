@@ -36,6 +36,12 @@ const LAB_REGISTRY: Record<string, LabDef> = {
   tni:        { label: 'Troponina I us (hsTnI)',            category: 'especial', processingTime: 3600      },
   bnp:        { label: 'NT-proBNP',                        category: 'especial', processingTime: 3600      },
   ddimer:     { label: 'Dimero-D',                         category: 'especial', processingTime: 3600      },
+  hemolysis:  { label: 'Perfil de hemolisis (LDH/Hapto)',  category: 'hema',     processingTime: 55  * 60 },
+  tls:        { label: 'Panel lisis tumoral (urato/P/Ca)', category: 'quimica',  processingTime: 48  * 60 },
+  // La actividad de ADAMTS13 tarda horas porque la tecnica es compleja y no se
+  // hace en todos los laboratorios. El retraso es el dato clinico: confirma la
+  // PTT, pero no se puede esperar para empezar el recambio plasmatico.
+  adamts13:   { label: 'Actividad ADAMTS13',               category: 'especial', processingTime: 8 * 3600 },
   pct:        { label: 'Procalcitonina',                   category: 'especial', processingTime: 110 * 60 },
   crp:        { label: 'PCR cuantitativa',                 category: 'especial', processingTime: 60  * 60 },
   cortisol:   { label: 'Cortisol basal',                   category: 'especial', processingTime: 14400     },
@@ -132,15 +138,37 @@ function genABG(s: Partial<Record<string, number>>, bv: number, rbc: number): La
 function genCBC(s: Partial<Record<string, number>>, bv: number, rbc: number, sepsisS: number): LabResult {
   const hbReal = gauss(calcHb(rbc, bv), 0.2);
   const hct    = gauss(hbReal / MCHC * 100, 0.8);
-  const leukopenia = sepsisS > 0.75 && rand('labAssay') < 0.12;
-  const wbc    = Math.max(0.3, leukopenia ? gauss(2.5, 0.4) : gauss(7.5 + sepsisS * 17, 1.2));
-  const plt    = gauss(200 - sepsisS * 100, 20);
-  const neutR  = Math.max(0.01, 0.60 + sepsisS * 0.28 + gauss(0, 0.02));
-  const lymphR = Math.max(0.01, 0.30 - sepsisS * 0.25 + gauss(0, 0.02));
-  const monoR  = Math.max(0.01, 0.06 + gauss(0, 0.01));
-  const eosiR  = Math.max(0.00, 0.03 - sepsisS * 0.028 + gauss(0, 0.003));
-  const cayR   = Math.max(0.00, 0.01 + sepsisS * 0.12  + gauss(0, 0.008));
-  const sum    = neutR + lymphR + monoR + eosiR + cayR;
+
+  // Leucocitos, neutrofilos y plaquetas ahora vienen del paciente, no de una
+  // formula local.
+  //
+  // Antes el recuento se derivaba de la severidad de la sepsis en el momento
+  // de generar el resultado, con dos consecuencias. Una: la leucopenia septica
+  // se SORTEABA en cada extraccion, de modo que el mismo paciente alternaba
+  // entre 2.500 y 24.000 leucocitos entre dos hemogramas consecutivos — una
+  // oscilacion que ningun paciente tiene y que impedia seguir una tendencia.
+  // Dos: las plaquetas solo podian bajar por sepsis, asi que una PTT con
+  // 12.000 o una CID con 38.000 eran inexpresables. Ambas magnitudes viven
+  // ahora en Vitals, las mantiene HematologyEngine y aqui solo se les añade el
+  // ruido analitico del contador.
+  const wbcTrue = s.wbcK      ?? Math.max(0.3, 7.5 + sepsisS * 17);
+  const ancTrue = s.ancK      ?? wbcTrue * (0.60 + sepsisS * 0.28);
+  const pltTrue = s.plateletsK ?? (200 - sepsisS * 100);
+
+  const wbc = Math.max(0.1, gauss(wbcTrue, Math.max(0.15, wbcTrue * 0.07)));
+  const plt = gauss(pltTrue, Math.max(3, pltTrue * 0.08));
+
+  // La formula se reconstruye alrededor del recuento absoluto de neutrofilos,
+  // para que el porcentaje que se informa y el ANC que maneja el motor no se
+  // contradigan: ANC = (segmentados + cayados) x leucocitos.
+  const neutFrac = Math.min(0.97, Math.max(0.02, Math.min(wbc, ancTrue) / wbc));
+  const cayR     = neutFrac * Math.min(0.45, 0.02 + sepsisS * 0.28);
+  const neutR    = Math.max(0.01, neutFrac - cayR);
+  const rest     = Math.max(0.01, 1 - neutFrac);
+  const lymphR   = rest * (0.72 - sepsisS * 0.18);
+  const monoR    = rest * 0.19;
+  const eosiR    = rest * Math.max(0.01, 0.09 - sepsisS * 0.08);
+  const sum      = neutR + lymphR + monoR + eosiR + cayR;
   const neut = (neutR  / sum) * 100;
   const linf = (lymphR / sum) * 100;
   const mono = (monoR  / sum) * 100;
@@ -169,16 +197,75 @@ function genCBC(s: Partial<Record<string, number>>, bv: number, rbc: number, sep
 }
 
 function genCoag(s: Partial<Record<string, number>>): LabResult {
+  // El INR y el fibrinogeno son ahora variables del paciente, mantenidas por
+  // HematologyEngine. Antes salian de la PAM: un INR de 2.4 exigia una presion
+  // media de 0 mmHg, de modo que la CID del catalogo —INR 2.4, fibrinogeno
+  // 90— no podia aparecer en la analitica ni con el escenario cargado.
   const stress = Math.max(0, (70 - (s.meanArterialPressure ?? 90)) * 0.02);
-  const inr  = gauss(1.0 + stress, 0.05);
-  const tp   = gauss(12 + stress * 3, 0.3);
-  const kptt = gauss(30, 1.5);
-  const fib  = gauss(350, 20);
+  const inrTrue = s.inr            ?? (1.0 + stress);
+  const fibTrue = s.fibrinogenMgDl ?? 350;
+
+  const inr  = gauss(inrTrue, Math.max(0.03, inrTrue * 0.04));
+  // El TP en segundos acompaña al INR: ISI ~1 sobre un TP control de 12 s.
+  const tp   = gauss(12 * inrTrue, 0.3);
+  // El KPTT se prolonga cuando se consumen los factores de la via intrinseca,
+  // que es lo que ocurre en la CID y no en la microangiopatia.
+  const kptt = gauss(30 + Math.max(0, (inrTrue - 1.1)) * 14
+                        + Math.max(0, (200 - fibTrue)) * 0.04, 1.5);
+  const fib  = gauss(fibTrue, Math.max(5, fibTrue * 0.06));
   return {
-    values: { TP: c2(tp,8,60), INR: c2(inr,0.8,8), KPTT: c2(kptt,20,150), Fibrinogeno: c2(fib,50,800) },
+    values: { TP: c2(tp,8,120), INR: c2(inr,0.8,12), KPTT: c2(kptt,20,200), Fibrinogeno: c2(fib,30,800) },
     units:  { TP: 's', INR: '', KPTT: 's', Fibrinogeno: 'mg/dL' },
     refs:   { TP: '11-13.5', INR: '0.9-1.1', KPTT: '25-35', Fibrinogeno: '200-400' },
     flags:  { INR: inr > 2.0 ? 'C' : inr > 1.5 ? 'H' : '', KPTT: kptt > 40 ? 'H' : '', Fibrinogeno: fib < 100 ? 'C' : fib < 150 ? 'L' : fib > 500 ? 'H' : '', TP: tp > 15 ? 'H' : '' },
+  };
+}
+
+/** Perfil de hemolisis: lo que convierte una anemia en una MAHA. */
+function genHemolysis(s: Partial<Record<string, number>>): LabResult {
+  const ldh   = gauss(s.ldhUl           ?? 180, Math.max(8, (s.ldhUl ?? 180) * 0.05));
+  const hapto = gauss(s.haptoglobinMgDl ?? 110, Math.max(2, (s.haptoglobinMgDl ?? 110) * 0.08));
+  // Los esquistocitos se informan en cruces porque asi los informa el frotis:
+  // es una lectura morfologica de quien mira el microscopio, no un numero.
+  const esq   = Math.round(Math.max(0, Math.min(3, s.schistocytes ?? 0)));
+  const bilI  = gauss(0.4 + Math.max(0, ldh - 250) * 0.0016, 0.08);
+  return {
+    values: {
+      LDH: c2(ldh, 50, 6000),
+      Haptoglobina: c2(hapto, 1, 400),
+      Esquistocitos: ['Ausentes', '+', '++', '+++'][esq],
+      'Bilirrubina indirecta': c2(bilI, 0.1, 20),
+    },
+    units: { LDH: 'U/L', Haptoglobina: 'mg/dL', Esquistocitos: 'cruces', 'Bilirrubina indirecta': 'mg/dL' },
+    refs:  { LDH: '120-250', Haptoglobina: '30-200', Esquistocitos: 'ausentes', 'Bilirrubina indirecta': 'menor de 0.8' },
+    flags: {
+      LDH:          ldh > 1000 ? 'C' : ldh > 250 ? 'H' : '',
+      Haptoglobina: hapto < 10 ? 'C' : hapto < 30 ? 'L' : '',
+      Esquistocitos: esq >= 2 ? 'C' : esq >= 1 ? 'H' : '',
+      'Bilirrubina indirecta': bilI > 2 ? 'H' : '',
+    },
+  };
+}
+
+/** Panel de lisis tumoral (Cairo-Bishop): urato, fosforo, calcio y potasio. */
+function genTls(s: Partial<Record<string, number>>): LabResult {
+  const ua  = gauss(s.uricAcidMgDl  ?? 4.8, Math.max(0.15, (s.uricAcidMgDl  ?? 4.8) * 0.04));
+  const pho = gauss(s.phosphateMgDl ?? 3.5, Math.max(0.10, (s.phosphateMgDl ?? 3.5) * 0.04));
+  const k   = gauss(s.kPlasma       ?? 4.0, 0.12);
+  // La hipocalcemia de la lisis tumoral es consecuencia del fosforo: el
+  // calcio precipita con el. Corregirla sin bajar el fosforo primero eleva el
+  // producto calcio-fosforo y precipita en el tubulo.
+  const ca  = gauss(9.2 - Math.max(0, pho - 4.5) * 0.52, 0.15);
+  return {
+    values: { 'Acido urico': c2(ua,0.5,40), Fosforo: c2(pho,0.5,16), Potasio: c2(k,1.5,9), 'Calcio total': c2(ca,4,13) },
+    units:  { 'Acido urico': 'mg/dL', Fosforo: 'mg/dL', Potasio: 'mEq/L', 'Calcio total': 'mg/dL' },
+    refs:   { 'Acido urico': '3.0-7.0', Fosforo: '2.5-4.5', Potasio: '3.5-5.0', 'Calcio total': '8.5-10.5' },
+    flags: {
+      'Acido urico': ua > 12 ? 'C' : ua > 7   ? 'H' : '',
+      Fosforo:       pho > 7 ? 'C' : pho > 4.5 ? 'H' : '',
+      Potasio:       k > 6.5 ? 'C' : k > 5.0  ? 'H' : k < 3.0 ? 'C' : '',
+      'Calcio total':ca < 7  ? 'C' : ca < 8.5 ? 'L' : '',
+    },
   };
 }
 
@@ -455,12 +542,24 @@ export class LabEngine {
       case 'lft':       return genLFT(s, sepsisS);
       case 'pancreatic':return genPancreatic(sepsisS);
 
-      case 'magphos': return {
-        values: { Magnesio: c2(gauss(1.9-sepsisS*0.5,0.10),0.5,4.0), Fosforo: c2(gauss(3.5,0.20),0.5,8.0), 'Ca ionico': c2(gauss(1.2-sepsisS*0.3,0.05),0.5,1.8) },
-        units:  { Magnesio: 'mEq/L', Fosforo: 'mg/dL', 'Ca ionico': 'mmol/L' },
-        refs:   { Magnesio: '1.5-2.5', Fosforo: '2.5-4.5', 'Ca ionico': '1.1-1.35' },
-        flags:  { Magnesio: '', Fosforo: '', 'Ca ionico': '' },
-      };
+      // El fosforo era la constante 3.5 con ruido, asi que la lisis tumoral del
+      // catalogo —que declara 9.4— se informaba normal. Ahora sale del
+      // paciente, y el calcio ionico baja con el porque precipitan juntos.
+      case 'magphos': {
+        const mg  = gauss(1.9 - sepsisS * 0.5, 0.10);
+        const pho = gauss(s.phosphateMgDl ?? 3.5, Math.max(0.10, (s.phosphateMgDl ?? 3.5) * 0.05));
+        const cai = gauss(1.2 - sepsisS * 0.3 - Math.max(0, pho - 4.5) * 0.055, 0.05);
+        return {
+          values: { Magnesio: c2(mg,0.5,4.0), Fosforo: c2(pho,0.5,16), 'Ca ionico': c2(cai,0.4,1.8) },
+          units:  { Magnesio: 'mEq/L', Fosforo: 'mg/dL', 'Ca ionico': 'mmol/L' },
+          refs:   { Magnesio: '1.5-2.5', Fosforo: '2.5-4.5', 'Ca ionico': '1.1-1.35' },
+          flags:  {
+            Magnesio: mg < 1.5 ? 'L' : mg > 2.5 ? 'H' : '',
+            Fosforo:  pho > 7  ? 'C' : pho > 4.5 ? 'H' : pho < 2.5 ? 'L' : '',
+            'Ca ionico': cai < 0.8 ? 'C' : cai < 1.1 ? 'L' : '',
+          },
+        };
+      }
 
       case 'albumin': return genSimple('Albumina', 4.0 - sepsisS*0.5, 'g/dL', '3.5-5.0', 1.5, 5.0, 99);
       case 'tni':     return genSimple('hsTnI', 0.005, 'ng/mL', 'menor de 0.026', 0, 0.026, 0.5);
@@ -476,7 +575,33 @@ export class LabEngine {
         };
       }
 
-      case 'ddimer':   return genSimple('Dimero-D', 250 + sepsisS*800, 'ng/mL FEU', 'menor de 500', 0, 500, 2000);
+      // El dimero-D sale del paciente y con techo alto: el genSimple anterior
+      // lo recortaba en 6.000 ng/mL (critHi x 3), de modo que la CID del
+      // catalogo, que declara 28.000, se informaba como 6.000 — justo por
+      // debajo de donde el score ISTH distingue elevacion fuerte de moderada.
+      case 'ddimer': {
+        const ddTrue = s.dDimerNgMl ?? (250 + sepsisS * 800);
+        const dd     = gauss(ddTrue, Math.max(20, ddTrue * 0.07));
+        return {
+          values: { 'Dimero-D': Math.round(Math.max(20, Math.min(60000, dd))) },
+          units:  { 'Dimero-D': 'ng/mL FEU' },
+          refs:   { 'Dimero-D': 'menor de 500' },
+          flags:  { 'Dimero-D': dd > 3000 ? 'C' : dd > 500 ? 'H' : '' },
+        };
+      }
+
+      case 'hemolysis': return genHemolysis(s);
+      case 'tls':       return genTls(s);
+
+      case 'adamts13': {
+        const act = gauss(s.adamts13Pct ?? 100, Math.max(0.5, (s.adamts13Pct ?? 100) * 0.06));
+        return {
+          values: { 'Actividad ADAMTS13': c2(act, 0, 150) },
+          units:  { 'Actividad ADAMTS13': '%' },
+          refs:   { 'Actividad ADAMTS13': 'mayor de 50' },
+          flags:  { 'Actividad ADAMTS13': act < 10 ? 'C' : act < 50 ? 'L' : '' },
+        };
+      }
       case 'pct':      return genPCT(sepsisS);
       case 'crp':      return genCRP(sepsisS);
 

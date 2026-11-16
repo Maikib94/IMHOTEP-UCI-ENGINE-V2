@@ -181,6 +181,27 @@ export interface Vitals {
   // EVLWI continua (actualizada por CardiovascularEngine; furosemida lo reduce)
   // Ref: Kushimoto Crit Care 2012 — normal 3-7 mL/kg PBW; ≥10 ARDS
   evlwi: number;         // mL/kg PBW — extravascular lung water index
+  // ─── Hematología (dominio hematológico — HematologyEngine) ────────────────
+  //
+  // Viven en Vitals, y no dentro del estado de la patología, por dos razones:
+  // son magnitudes MEDIBLES del paciente (como la creatinina o el potasio, que
+  // ya están aquí), y LabOrder.snapshot es un Partial<Vitals> — ponerlas aquí
+  // hace que la muestra extraída a las 14:00 conserve los valores de las 14:00
+  // sin una línea de plomería extra. Antes de esto el hemograma derivaba las
+  // plaquetas de la severidad de la sepsis y la coagulación de la PAM, de modo
+  // que una CID con fibrinógeno de 90 o una PTT con 12.000 plaquetas eran
+  // literalmente inexpresables.
+  plateletsK: number;      // K/µL — plaquetas (normal 150-400)
+  wbcK: number;            // K/µL — leucocitos (normal 4.5-11)
+  ancK: number;            // K/µL — neutrófilos absolutos (normal 1.5-7.5; neutropenia febril < 0.5)
+  fibrinogenMgDl: number;  // mg/dL — fibrinógeno (normal 200-400; crítico < 100)
+  inr: number;             // razón normalizada internacional (normal 0.9-1.1)
+  dDimerNgMl: number;      // ng/mL FEU — dímero-D (normal < 500)
+  ldhUl: number;           // U/L — LDH (normal 120-250; marcador de hemólisis)
+  haptoglobinMgDl: number; // mg/dL — haptoglobina (normal 30-200; se consume en hemólisis)
+  schistocytes: number;    // cruces 0-3 en el frotis — hemólisis mecánica
+  uricAcidMgDl: number;    // mg/dL — ácido úrico (normal 3-7; lisis tumoral > 8)
+  phosphateMgDl: number;   // mg/dL — fósforo (normal 2.5-4.5; lisis tumoral > 6)
 }
 
 export type VentilatorMode = 'VC-AC' | 'PC-AC' | 'PSV' | 'SIMV' | 'CPAP';
@@ -410,6 +431,17 @@ const INITIAL_VITALS: Vitals = {
   magnesiumMgdL: 2.0,   // mg/dL (normal 1.7-2.4)
   gedi: 740,             // mL/m² (normal; CardiovascularEngine actualiza cada tick)
   evlwi: 5.0,           // mL/kg PBW (normal; CardiovascularEngine actualiza cada tick)
+  plateletsK: 230,       // K/µL (normal)
+  wbcK: 7.5,             // K/µL (normal)
+  ancK: 4.5,             // K/µL (normal)
+  fibrinogenMgDl: 320,   // mg/dL (normal)
+  inr: 1.0,              // normal
+  dDimerNgMl: 250,       // ng/mL FEU (normal)
+  ldhUl: 180,            // U/L (normal)
+  haptoglobinMgDl: 110,  // mg/dL (normal)
+  schistocytes: 0,       // cruces en el frotis (ninguna)
+  uricAcidMgDl: 4.8,     // mg/dL (normal)
+  phosphateMgDl: 3.5,    // mg/dL (normal)
 };
 
 const BV_NORMAL = 5000;
@@ -577,6 +609,14 @@ interface PatientState {
   crystalloidAccumulated: number;
   prbcUnitsGiven: number;
   ffpUnitsGiven: number;
+  /** Unidades acumuladas de plaquetas y crioprecipitado.
+   *  Se contaban las de concentrado de glóbulos y las de plasma, pero no
+   *  estas dos, de modo que ningún motor podía saber que se había transfundido
+   *  plaquetas. HematologyEngine lee el incremento entre ticks: es lo que le
+   *  permite subir el recuento cuando la transfusión está indicada — y empeorar
+   *  la microtrombosis cuando está contraindicada. */
+  plateletUnitsGiven: number;
+  cryoUnitsGiven: number;
   // Hidratación de mantenimiento (Fase 5) — Hahn RG BJA 2018-2021 (volume kinetics)
   maintenanceFluidRate_mLh: number;          // mL/h; 0 = desactivada
   maintenanceFluidType: 'ringer_lactato' | 'sf_09' | 'dex5';
@@ -687,6 +727,8 @@ export const usePatientStore = create<PatientState>((set) => ({
   homeMeds: [],
   prbcUnitsGiven: 0,
   ffpUnitsGiven: 0,
+  plateletUnitsGiven: 0,
+  cryoUnitsGiven: 0,
   maintenanceFluidRate_mLh: 0,
   maintenanceFluidType: 'ringer_lactato',
   maintenanceCumulative_mL: 0,
@@ -725,6 +767,8 @@ export const usePatientStore = create<PatientState>((set) => ({
     crystalloidAccumulated: 0,
     prbcUnitsGiven: 0,
     ffpUnitsGiven: 0,
+    plateletUnitsGiven: 0,
+    cryoUnitsGiven: 0,
     maintenanceCumulative_mL: 0,
   }),
 
@@ -747,12 +791,17 @@ export const usePatientStore = create<PatientState>((set) => ({
       : s.crystalloidAccumulated;
     const prbcDelta = type === 'prbc' ? Math.round(volume / 300) : 0;
     const ffpDelta = type === 'ffp' ? Math.round(volume / 250) : 0;
+    // 1 pool de aféresis = 250 mL; 1 unidad de crioprecipitado = 50 mL.
+    const pltDelta  = (type === 'platelets' && volume > 0) ? Math.max(1, Math.round(volume / 250)) : 0;
+    const cryoDelta = (type === 'cryo'      && volume > 0) ? Math.max(1, Math.round(volume / 50))  : 0;
     return {
       bloodVolume: newBV,
       redBloodCellMass: newRBC,
       crystalloidAccumulated: newCryst,
       prbcUnitsGiven: s.prbcUnitsGiven + prbcDelta,
       ffpUnitsGiven: s.ffpUnitsGiven + ffpDelta,
+      plateletUnitsGiven: s.plateletUnitsGiven + pltDelta,
+      cryoUnitsGiven: s.cryoUnitsGiven + cryoDelta,
     };
   }),
 

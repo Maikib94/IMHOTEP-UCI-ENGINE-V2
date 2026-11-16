@@ -9,6 +9,7 @@ import { usePharmacologyStore, type DrugId } from '../store/usePharmacologyStore
 import { usePrognosisStore } from '../store/usePrognosisStore';
 import { useUIStore } from '../store/useUIStore';
 import { useMicrobiologyStore } from '../store/useMicrobiologyStore';
+import { usePathologyStore } from '../store/usePathologyStore';
 import { useTimeStore } from '../store/useTimeStore';
 import { DRUG_CATALOG } from '../store/usePharmacologyStore';
 import RespiratorySupportSelector from './RespiratorySupportSelector';
@@ -30,6 +31,7 @@ import InsulinHGTControls        from './clinical/InsulinHGTControls';
 import { AntihypertensiveControls }     from './clinical/AntihypertensiveControls';
 import { OralAntiarrhythmicControls }   from './clinical/OralAntiarrhythmicControls';
 import QuickARMPanel             from './QuickARMPanel';
+import HematologyPanel           from './hemato/HematologyPanel';
 import CulturePanel              from './CulturePanel';
 import SpecialDrugsPanel         from './clinical/SpecialDrugsPanel';
 
@@ -290,6 +292,7 @@ interface ClinicalControlPanelProps {
 export default function ClinicalControlPanel({ onOpenVent }: ClinicalControlPanelProps) {
   const [showPharmacy, setShowPharmacy] = useState(false);
   const { doseDisplayMode, setDoseDisplayMode } = useLanguage();
+  const hematoActive = usePathologyStore(s => s.hematologic.isActive);
 
   // ── Badges por grupo de drogas ──────────────────────────────────────────────
   const hemoBadge  = useDrugBadge(['noradrenaline','adrenaline','vasopressin','methylene_blue',
@@ -467,6 +470,20 @@ export default function ClinicalControlPanel({ onOpenVent }: ClinicalControlPane
             dotColor="#a78bfa" accentColor="#c4b5fd">
             <DoseAgendaOverview />
           </AccordionSection>
+        </AccordionSection>
+
+        {/* 6. HEMATOLOGÍA — el cuadro de consumo, los scores y la conducta.
+            Se abre sola en los casos hematológicos: en una PTT el tiempo hasta
+            el recambio plasmático se mide en horas y buscar el panel es parte
+            del retraso. */}
+        <AccordionSection
+          id="hematologia"
+          title="HEMATOLOGÍA"
+          dotColor="#dc2626"
+          accentColor="#f87171"
+          defaultExpanded={hematoActive}
+        >
+          <HematologyPanel />
         </AccordionSection>
 
       </div>
